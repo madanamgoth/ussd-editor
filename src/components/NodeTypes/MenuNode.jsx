@@ -1,0 +1,114 @@
+import React from 'react';
+import { Handle, Position } from '@xyflow/react';
+
+const MenuNode = ({ data, isConnectable, selected }) => {
+  // Get the default language or fallback to 'en'
+  const defaultLanguage = data.config?.defaultLanguage || 'en';
+  
+  // Get the prompt in the default language
+  const displayPrompt = data.config?.prompts?.[defaultLanguage] || 
+                       data.config?.prompts?.en || 
+                       '1. Send Money\n2. Check Balance\n3. Pay Bills';
+  
+  // Extract menu options from the prompt
+  const getMenuOptions = () => {
+    const lines = displayPrompt.split('\n').filter(line => line.trim());
+    const options = [];
+    
+    lines.forEach(line => {
+      const match = line.match(/^(\d+)\./);
+      if (match) {
+        options.push({
+          number: match[1],
+          text: line.replace(/^\d+\.\s*/, '')
+        });
+      }
+    });
+    
+    return options;
+  };
+
+  const menuOptions = getMenuOptions();
+
+  return (
+    <div 
+      className={`node menu-node ${selected ? 'selected' : ''}`}
+      title={`MENU: ${data.label || 'Menu'}\nOptions:\n${menuOptions.map(opt => `${opt.number}. ${opt.text}`).join('\n')}`}
+    >
+      <div className="node-header">
+        <div className="node-title truncate-text">
+          {data.label || 'Menu'}
+        </div>
+        <div className="node-type">MENU</div>
+      </div>
+      
+      <div className="node-preview">
+        <div className="menu-options-list">
+          {menuOptions.map((option, index) => {
+            return (
+              <div key={option.number} className="menu-option-item">
+                <span className="option-text truncate-text" title={`${option.number}. ${option.text}`}>
+                  {option.number}. {option.text}
+                </span>
+                <Handle
+                  type="source"
+                  position={Position.Right}
+                  id={`option-${option.number}`}
+                  isConnectable={isConnectable}
+                  style={{
+                    position: 'relative',
+                    right: 'auto',
+                    top: 'auto',
+                    transform: 'none',
+                    background: '#555',
+                    width: '8px',
+                    height: '8px',
+                    border: '1px solid #fff'
+                  }}
+                />
+              </div>
+            );
+          })}
+          
+          {menuOptions.length === 0 && (
+            <div className="no-menu-options">
+              No menu options defined
+            </div>
+          )}
+        </div>
+        
+        {/* Fallback connection */}
+        {menuOptions.length > 0 && (
+          <div className="fallback-status">
+            <span className="fallback-label">Fallback:</span>
+            <Handle
+              type="source"
+              position={Position.Bottom}
+              id="fallback"
+              isConnectable={isConnectable}
+              style={{
+                position: 'relative',
+                bottom: 'auto',
+                left: 'auto',
+                transform: 'none',
+                background: '#f59e0b',
+                width: '8px',
+                height: '8px',
+                border: '1px solid #fff'
+              }}
+            />
+          </div>
+        )}
+      </div>
+
+      <Handle
+        type="target"
+        position={Position.Left}
+        isConnectable={isConnectable}
+        style={{ background: '#555' }}
+      />
+    </div>
+  );
+};
+
+export default MenuNode;

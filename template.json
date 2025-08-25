@@ -1,0 +1,346 @@
+[{
+    "_id": "GetDebitCardDetails",
+    "target": {
+        "endpoint": "http://10.22.21.211:1080/cards/getdebitcarddetails",
+        "method": "POST",
+        "headers": {
+            "Content-Type": "application/json"
+        }
+    },
+    "requestTemplate": {
+        "joltSpec": [
+            {
+                "operation": "shift",
+                "spec": {
+                    "input": {
+                        "PrimaryAcctNo": "GetDebitCardDetailsReq.PrimaryAcctNo",
+                        "ProcessingCode": "GetDebitCardDetailsReq.ProcessingCode",
+                        "TxnAmt": "GetDebitCardDetailsReq.TxnAmt",
+                        "TransDateTime": "GetDebitCardDetailsReq.TransDateTime",
+                        "STAN": "GetDebitCardDetailsReq.STAN",
+                        "LocalTxnTime": "GetDebitCardDetailsReq.LocalTxnTime",
+                        "LocalTxnDate": "GetDebitCardDetailsReq.LocalTxnDate",
+                        "POSEntryMode": "GetDebitCardDetailsReq.POSEntryMode",
+                        "POSCondCode": "GetDebitCardDetailsReq.POSCondCode",
+                        "TerminalId": "GetDebitCardDetailsReq.TerminalId",
+                        "CardAcceptorId": "GetDebitCardDetailsReq.CardAcceptorId",
+                        "CardAcceptorNameLoc": "GetDebitCardDetailsReq.CardAcceptorNameLoc",
+                        "TxnCurrencyCode": "GetDebitCardDetailsReq.TxnCurrencyCode",
+                        "ReceivingInstId": "GetDebitCardDetailsReq.ReceivingInstId",
+                        "POSDataCode": "GetDebitCardDetailsReq.POSDataCode",
+                        "StructuredData": "GetDebitCardDetailsReq.StructuredData",
+                        "ExtendedTxnType": "GetDebitCardDetailsReq.ExtendedTxnType",
+                        "KeyLastUpdatedTime": "GetDebitCardDetailsReq.KeyLastUpdatedTime"
+                    }
+                }
+            },
+            {
+                "operation": "default",
+                "spec": {
+                    "GetDebitCardDetailsReq": {
+                        "RequestHeader": {
+                            "APIContext": {
+                                "APIVersion": "1.0",
+                                "APIName": "GetDebitCardDetails"
+                            },
+                            "ClientContext": {
+                                "RequesterID": "ABC",
+                                "TerminalID": "192.168.10.142"
+                            },
+                            "ServerContext": {
+                                "ProviderID": "PST"
+                            }
+                        }
+                    }
+                }
+            }
+        ]
+    },
+    "responseTemplate": {
+        "joltSpec": [
+            {
+                "operation": "shift",
+                "spec": {
+                    "input": {
+                        "GetDebitCardDetailsRes": {
+                            "ResponseHeader": {
+                                "APIResponse": {
+                                    "StatusCode": "StatusCode"
+                                }
+                            },
+                            "PrimaryAcctNo": "PrimaryAcctNo",
+                            "ProcessingCode": "ProcessingCode",
+                            "TxnAmt": "TxnAmt",
+                            "TransDateTime": "TransDateTime",
+                            "STAN": "STAN",
+                            "LocalTxnTime": "LocalTxnTime",
+                            "LocalTxnDate": "LocalTxnDate",
+                            "ExpiryDate": "ExpiryDate",
+                            "MerchantType": "MerchantType",
+                            "POSEntryMode": "POSEntryMode",
+                            "CardSeqNo": "CardSeqNo",
+                            "POSCondCode": "POSCondCode",
+                            "TxnFeeAmt": "TxnFeeAmt",
+                            "SettlementFeeAmt": "SettlementFeeAmt",
+                            "AcquiringInstId": "AcquiringInstId",
+                            "RetRefNo": "RetRefNo",
+                            "AuthIdResp": "AuthIdResp",
+                            "ResponseCode": "ResponseCode",
+                            "ServiceRestrictCode": "ServiceRestrictCode",
+                            "TerminalId": "TerminalId",
+                            "CardAcceptorId": "CardAcceptorId",
+                            "CardAcceptorNameLoc": "CardAcceptorNameLoc",
+                            "TxnCurrencyCode": "TxnCurrencyCode",
+                            "AdditionalAmt": "AdditionalAmt",
+                            "EchoData": "EchoData",
+                            "AccountId": "AccountId",
+                            "POSDataCode": "POSDataCode",
+                            "SwitchKey": "SwitchKey",
+                            "RoutingInfo": "RoutingInfo",
+                            "AuthProfile": "AuthProfile",
+                            "SettlementDate": "SettlementDate",
+                            "CardVerifyResult": "CardVerifyResult",
+                            "ExtendedTxnType": "ExtendedTxnType",
+                            "CardDtls": "CardDtls"
+                        }
+                    }
+                }
+            },
+            {
+                "operation": "default",
+                "spec": {
+                    "status": "SUCCEEDED"
+                }
+            }
+        ]
+    },
+    "responseErrorTemplate": {
+        "joltSpec": [
+            {
+                "operation": "shift",
+                "spec": {
+                    "input": {
+                        "GetDebitCardDetailsRes": {
+                            "ResponseHeader": {
+                                "APIResponse": {
+                                    "StatusCode": "statusCode"
+                                }
+                            },
+                            "ErrorDetails": {
+                                "ErrorInfo": {
+                                    "ErrorSrc": "ErrorDetails.ErrorInfo.ErrSrc",
+                                    "ErrorCode": "ErrorDetails.ErrorInfo.EsbErrCode",
+                                    "ErrorLongDesc": "ErrorDetails.ErrorInfo.EsbErrLongDesc",
+                                    "HostErrorCode": "ErrorDetails.ErrorInfo.HostErrCode",
+                                    "HostErrorDesc": "ErrorDetails.ErrorInfo.HostErrDesc",
+                                    "EsbErrShortDesc": "ErrorDetails.ErrorInfo.ErrShortDesc"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                "operation": "default",
+                "spec": {
+                    "errors": [
+                        {
+                            "code": "FAILED",
+                            "message": "Authentication is required and has failed or has not yet been provided."
+                        }
+                    ],
+                    "status": "FAILED"
+                }
+            }
+        ]
+    }
+},{
+    "_id": "MPClearCustCreditTransfer",
+    "target": {
+        "endpoint": "http://10.22.21.211:1080/mobilepayments/fitoficustcredittransfer",
+        "method": "POST",
+        "headers": {
+            "Content-Type": "application/json"
+        }
+    },
+    "requestTemplate": {
+        "joltSpec": [
+            {
+                "operation": "shift",
+                "spec": {
+                "input":{
+                    "ReqRefNo": "FIToFICustCreditTransferReq.RequestHeader.ClientContext.ReqRefNo",
+                    "RequestType": "FIToFICustCreditTransferReq.RequestHeader.ClientContext.RequestType",
+                    "FMSRefNo": "FIToFICustCreditTransferReq.FMSRefNo",
+                    "OTPFlag": "FIToFICustCreditTransferReq.OTPFlag",
+                    "BenfMobileNo": "FIToFICustCreditTransferReq.BenfMobileNo",
+                    "TransactionType": "FIToFICustCreditTransferReq.TransactionType",
+                    "MsgId": "FIToFICustCreditTransferReq.FIToFICstmrCdtTrf.GrpHdr.MsgId",
+                    "CreDtTm": "FIToFICustCreditTransferReq.FIToFICstmrCdtTrf.GrpHdr.CreDtTm",
+                    "NbOfTxs": "FIToFICustCreditTransferReq.FIToFICstmrCdtTrf.GrpHdr.NbOfTxs",
+                    "IntrBkSttlmDt": "FIToFICustCreditTransferReq.FIToFICstmrCdtTrf.GrpHdr.IntrBkSttlmDt",
+                    "value": [
+                        "FIToFICustCreditTransferReq.FIToFICstmrCdtTrf.GrpHdr.TtlIntrBkSttlmAmt.value",
+                        "FIToFICustCreditTransferReq.FIToFICstmrCdtTrf.CdtTrfTxInf.IntrBkSttlmAmt.value"
+                    ],
+                    "CdtrAgt": {
+                        "BICFI": "FIToFICustCreditTransferReq.FIToFICstmrCdtTrf.GrpHdr.InstdAgt.FinInstnId.BICFI"
+                    },
+                    "TxId": "FIToFICustCreditTransferReq.FIToFICstmrCdtTrf.CdtTrfTxInf.PmtId.TxId",
+                    "EndToEndId": "FIToFICustCreditTransferReq.FIToFICstmrCdtTrf.CdtTrfTxInf.PmtId.EndToEndId",
+                    "DbtrAcct": {
+                        "Id": "FIToFICustCreditTransferReq.FIToFICstmrCdtTrf.CdtTrfTxInf.DbtrAcct.Id"
+                    },
+                    "CdtrAcct": {
+                        "Id": "FIToFICustCreditTransferReq.FIToFICstmrCdtTrf.CdtTrfTxInf.CdtrAcct.Id"
+                    }
+                }
+		}
+            },
+            {
+                "operation": "default",
+                "spec": {
+                    "FIToFICustCreditTransferReq": {
+                        "RequestHeader": {
+                            "APIContext": {
+                                "APIName": "FIToFICustCreditTransfer",
+                                "APIVersion": "1.0"
+                            },
+                            "ClientContext": {
+                                "RequesterID": "WLT",
+                                "TerminalID": "10.6.222.87"
+                            },
+                            "ServerContext": {
+                                "ProviderID": "MPC"
+                            },
+                            "DeviceContext": {
+                                "IPAddress": "5.162.169.211",
+                                "UserAgent": "Java/1.8.0_351",
+                                "TrueCountry": "OM",
+                                "ServiceProvider": "--",
+                                "DeviceIMEI": "62E0CAEC-D9E5-4986-97A1-A37CC4E7AC7D",
+                                "DeviceOS": "IOS",
+                                "DeviceOSVersion": "16.7"
+                            }
+                        },
+                        "FIToFICstmrCdtTrf": {
+                            "GrpHdr": {
+                                "TtlIntrBkSttlmAmt": {
+                                    "Ccy": "OMR"
+                                },
+                                "SttlmInf": {
+                                    "SttlmMtd": "CLRG",
+                                    "ClrSys": {
+                                        "Prtry": "CBO"
+                                    }
+                                },
+                                "PmtTpInf": {
+                                    "LclInstrm": {
+                                        "Cd": "TEL"
+                                    },
+                                    "CtgyPurp": {
+                                        "Prtry": "1"
+                                    }
+                                },
+                                "InstgAgt": {
+                                    "FinInstnId": {
+                                        "BICFI": "BMUSOMRX"
+                                    }
+                                }
+                            },
+                            "CdtTrfTxInf": {
+                                "IntrBkSttlmAmt": {
+                                    "Ccy": "OMR"
+                                },
+                                "ChrgBr": "SLEV",
+                                "DbtrAgt": {
+                                    "FinInstnId": {
+                                        "BICFI": "BMUSOMRX"
+                                    }
+                                },
+                                "CdtrAgt": {
+                                    "FinInstnId": {
+                                        "BICFI": "CBOMOMRUMPC"
+                                    }
+                                }
+                            },
+                            "SplmtryData": {
+                                "PlcAndNm": "ACHSupplementaryData",
+                                "Envlp": {
+                                    "achSupplementaryData": {
+                                        "batchSource": "20"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        ]
+    },
+    "responseTemplate": {
+        "joltSpec": [
+            {
+                "operation": "shift",
+                "spec": {
+                    "input": {
+                        "FIToFICustCreditTransferRes": {
+                            "ResponseHeader": {
+                                "APIResponse": {
+                                    "StatusCode": "StatusCode"
+                                }
+                            },
+                            "FIToFIPmtStsRpt": "FIToFIPmtStsRpt"
+                        }
+                    }
+                }
+            },
+            {
+                "operation": "default",
+                "spec": {
+                    "status": "SUCCEEDED"
+                }
+            }
+        ]
+    },
+    "responseErrorTemplate": {
+        "joltSpec": [
+            {
+                "operation": "shift",
+                "spec": {
+                    "input": {
+                        "FIToFICustCreditTransferRes": {
+                            "ResponseHeader": {
+                                "APIResponse": {
+                                    "StatusCode": "statusCode"
+                                }
+                            },
+                            "ErrorDetails": {
+                                "ErrorInfo": {
+                                    "ErrorSrc": "ErrorDetails.ErrorInfo.ErrSrc",
+                                    "ErrorCode": "ErrorDetails.ErrorInfo.EsbErrCode",
+                                    "ErrorLongDesc": "ErrorDetails.ErrorInfo.EsbErrLongDesc",
+                                    "HostErrorCode": "ErrorDetails.ErrorInfo.HostErrCode",
+                                    "HostErrorDesc": "ErrorDetails.ErrorInfo.HostErrDesc",
+                                    "EsbErrShortDesc": "ErrorDetails.ErrorInfo.ErrShortDesc"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                "operation": "default",
+                "spec": {
+                    "errors": [
+                        {
+                            "code": "FAILED",
+                            "message": "Authentication is required and has failed or has not yet been provided."
+                        }
+                    ],
+                    "status": "FAILED"
+                }
+            }
+        ]
+    }
+}]
