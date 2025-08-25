@@ -1,4 +1,5 @@
 // Utility functions for USSD flow management
+import { MarkerType } from '@xyflow/react';
 
 export const generateNodeId = (type) => {
   const timestamp = Date.now();
@@ -106,7 +107,7 @@ export const getNodeDimensions = (type) => {
   return dimensions[type] || { width: 150, height: 100 };
 };
 
-export const createEdge = (source, target, sourceHandle = null, animated = true) => {
+export const createEdge = (source, target, sourceHandle = null, animated = true, label = null) => {
   const colors = [
     '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4',
     '#84cc16', '#f97316', '#ec4899', '#64748b', '#dc2626',
@@ -119,6 +120,26 @@ export const createEdge = (source, target, sourceHandle = null, animated = true)
     ? `xy-edge__${source}${sourceHandle}-${target}`
     : `xy-edge__${source}-${target}`;
 
+  // Generate meaningful label based on sourceHandle
+  let edgeLabel = label;
+  if (!edgeLabel && sourceHandle) {
+    if (sourceHandle.startsWith('transaction-')) {
+      const code = sourceHandle.replace('transaction-', '');
+      edgeLabel = `${code === '200' ? '✅' : code === '400' ? '⚠️' : '❌'} ${code}`;
+    } else if (sourceHandle.startsWith('option-')) {
+      const option = sourceHandle.replace('option-', '');
+      edgeLabel = `📋 Option ${option}`;
+    } else if (sourceHandle === 'fallback') {
+      edgeLabel = '🔄 Fallback';
+    } else if (sourceHandle === 'input') {
+      edgeLabel = '📝 Input';
+    } else {
+      edgeLabel = sourceHandle;
+    }
+  } else if (!edgeLabel) {
+    edgeLabel = '➡️ Next';
+  }
+
   return {
     id: edgeId,
     source,
@@ -126,16 +147,36 @@ export const createEdge = (source, target, sourceHandle = null, animated = true)
     sourceHandle,
     type: 'smoothstep',
     animated,
+    label: edgeLabel,
+    labelStyle: {
+      fill: color,
+      fontWeight: 600,
+      fontSize: '12px',
+    },
+    labelBgStyle: {
+      fill: 'white',
+      fillOpacity: 0.9,
+      stroke: color,
+      strokeWidth: 1,
+    },
+    labelBgPadding: [4, 8],
+    labelBgBorderRadius: 4,
     markerEnd: {
-      type: 'arrowclosed',
+      type: MarkerType.ArrowClosed,
       width: 20,
       height: 20,
       color
     },
     style: {
-      strokeWidth: 2,
-      stroke: color
-    }
+      strokeWidth: 3,
+      stroke: color,
+      cursor: 'pointer'
+    },
+    // Add properties for better clickability
+    interactionWidth: 20, // Makes the edge easier to click
+    focusable: true,
+    selectable: true,
+    deletable: true
   };
 };
 
@@ -188,13 +229,13 @@ export const generateEdgesFromNodes = (nodes) => {
     Object.entries(transitions).forEach(([key, targetId]) => {
       if (targetId && targetId.trim() !== '') {
         const sourceHandle = key === '' ? null : key;
-        edges.push(createEdge(node.id, targetId, sourceHandle));
+        edges.push(createEdge(node.id, targetId, sourceHandle, true, null));
       }
     });
     
     // Handle fallback edges
     if (node.data.config.fallback && node.data.config.fallback.trim() !== '') {
-      edges.push(createEdge(node.id, node.data.config.fallback, 'fallback'));
+      edges.push(createEdge(node.id, node.data.config.fallback, 'fallback', true, null));
     }
   });
   
@@ -210,16 +251,16 @@ export const validateFlow = (nodes, edges) => {
   if (startNodes.length === 0) {
     errors.push('Flow must have at least one START node');
   } else if (startNodes.length > 1) {
-    warnings.push('Multiple START nodes detected');
+    warnings.push('Multiple START nodes detected - only the first one will be used');
   }
   
   // Check for end nodes
   const endNodes = nodes.filter(node => node.type === 'end');
   if (endNodes.length === 0) {
-    warnings.push('Flow should have at least one END node');
+    warnings.push('Flow should have at least one END node for proper termination');
   }
   
-  // Check for orphaned nodes
+  // Check for orphaned nodes (except START nodes)
   const connectedNodeIds = new Set();
   edges.forEach(edge => {
     connectedNodeIds.add(edge.source);
@@ -231,18 +272,73 @@ export const validateFlow = (nodes, edges) => {
   );
   
   if (orphanedNodes.length > 0) {
-    warnings.push(`${orphanedNodes.length} orphaned nodes detected`);
+    warnings.push(`${orphanedNodes.length} orphaned nodes detected: ${orphanedNodes.map(n => n.id).join(', ')}`);
   }
+  
+  // Check for missing prompts
+  nodes.forEach(node => {
+    const prompts = node.data.config?.prompts || {};
+    const hasPrompts = Object.values(prompts).some(prompt => prompt && prompt.trim() !== '');
+    
+    if (!hasPrompts && node.type !== 'end') {
+      warnings.push(`Node ${node.id} (${node.type}) has no prompts configured`);
+    }
+  });
   
   // Check for missing transitions
   nodes.forEach(node => {
-    const transitions = node.data.config.transitions || {};
+    const transitions = node.data.config?.transitions || {};
     const hasTransitions = Object.values(transitions).some(target => target && target.trim() !== '');
+    const hasOutgoingEdges = edges.some(edge => edge.source === node.id);
     
-    if (node.type !== 'end' && !hasTransitions) {
-      warnings.push(`Node ${node.id} has no outgoing connections`);
+    if (node.type !== 'end' && !hasTransitions && !hasOutgoingEdges) {
+      warnings.push(`Node ${node.id} (${node.type}) has no outgoing connections`);
     }
   });
+  
+  // Check for INPUT nodes without variable names
+  nodes.forEach(node => {
+    if (node.type === 'input' && !node.data.config?.variableName) {
+      errors.push(`INPUT node ${node.id} must have a variable name`);
+    }
+  });
+  
+  // Check for ACTION nodes without templates
+  nodes.forEach(node => {
+    if (node.type === 'action') {
+      const templates = node.data.config?.templates || [];
+      if (templates.length === 0) {
+        warnings.push(`ACTION node ${node.id} has no API templates configured`);
+      }
+    }
+  });
+  
+  // Check for circular references
+  const visited = new Set();
+  const recursionStack = new Set();
+  
+  const hasCycle = (nodeId) => {
+    if (recursionStack.has(nodeId)) return true;
+    if (visited.has(nodeId)) return false;
+    
+    visited.add(nodeId);
+    recursionStack.add(nodeId);
+    
+    const outgoingEdges = edges.filter(edge => edge.source === nodeId);
+    for (const edge of outgoingEdges) {
+      if (hasCycle(edge.target)) return true;
+    }
+    
+    recursionStack.delete(nodeId);
+    return false;
+  };
+  
+  for (const node of nodes) {
+    if (hasCycle(node.id)) {
+      errors.push('Circular reference detected in the flow');
+      break;
+    }
+  }
   
   return { errors, warnings };
 };

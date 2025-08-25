@@ -238,23 +238,26 @@ const NodeConfigPanel = ({ selectedNode, onUpdateNode, onClose, allNodes = [] })
 
         {selectedNode.data.type === 'ACTION' && (
           <>
+            {/* Templates Section */}
             <div className="config-section">
               <div className="section-header">
-                <label>Templates:</label>
+                <label>🔗 API Templates</label>
                 <button
                   type="button"
                   onClick={() => setShowTemplateCreator(true)}
                   className="add-template-btn"
                 >
-                  + Add Template
+                  ➕ Add Template
                 </button>
               </div>
               <div className="templates-config">
                 {config.templates.map((template, index) => (
                   <div key={index} className="template-config-item">
                     <div className="template-info">
-                      <span className="template-id">{template._id}</span>
-                      <span className="template-endpoint">{template.target?.endpoint}</span>
+                      <div className="template-id">📋 {template._id || `Template ${index + 1}`}</div>
+                      <div className="template-endpoint">
+                        {template.target?.method || 'POST'} {template.target?.endpoint || 'No endpoint set'}
+                      </div>
                     </div>
                     <button
                       type="button"
@@ -263,32 +266,53 @@ const NodeConfigPanel = ({ selectedNode, onUpdateNode, onClose, allNodes = [] })
                         setConfig(prev => ({ ...prev, templates: newTemplates }));
                       }}
                       className="remove-btn"
+                      title="Remove template"
                     >
-                      Remove
+                      🗑️ Remove
                     </button>
                   </div>
                 ))}
                 {config.templates.length === 0 && (
-                  <p className="no-templates">No templates created. Click "Add Template" to create one.</p>
+                  <div className="no-templates">
+                    <p>📝 No API templates created yet</p>
+                    <p>Click "Add Template" above to create your first API template</p>
+                  </div>
                 )}
               </div>
             </div>
 
+            {/* Transaction Codes Section */}
             <div className="config-section">
-              <label>Transaction Codes:</label>
+              <div className="section-header">
+                <label>🔄 Response Codes</label>
+              </div>
               <div className="transaction-codes-config">
+                <p style={{ margin: '0 0 1rem 0', color: '#6b7280', fontSize: '0.875rem' }}>
+                  Define HTTP response codes that will create connection points on your action node
+                </p>
                 {config.transactionCodes.map((code, index) => (
                   <div key={index} className="transaction-code-item">
-                    <input
-                      type="text"
-                      value={code}
-                      onChange={(e) => {
-                        const newCodes = [...config.transactionCodes];
-                        newCodes[index] = e.target.value;
-                        setConfig(prev => ({ ...prev, transactionCodes: newCodes }));
-                      }}
-                      placeholder="Transaction code (e.g., 200, 400)"
-                    />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
+                      <span style={{ 
+                        fontSize: '1.2rem',
+                        color: code.startsWith('2') ? '#10b981' : 
+                               code.startsWith('4') ? '#f59e0b' : '#ef4444'
+                      }}>
+                        {code.startsWith('2') ? '✅' : 
+                         code.startsWith('4') ? '⚠️' : '❌'}
+                      </span>
+                      <input
+                        type="text"
+                        value={code}
+                        onChange={(e) => {
+                          const newCodes = [...config.transactionCodes];
+                          newCodes[index] = e.target.value;
+                          setConfig(prev => ({ ...prev, transactionCodes: newCodes }));
+                        }}
+                        placeholder="e.g., 200, 400, 500"
+                        style={{ flex: 1 }}
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={() => {
@@ -296,8 +320,9 @@ const NodeConfigPanel = ({ selectedNode, onUpdateNode, onClose, allNodes = [] })
                         setConfig(prev => ({ ...prev, transactionCodes: newCodes }));
                       }}
                       className="remove-btn"
+                      title="Remove response code"
                     >
-                      Remove
+                      🗑️
                     </button>
                   </div>
                 ))}
@@ -311,7 +336,7 @@ const NodeConfigPanel = ({ selectedNode, onUpdateNode, onClose, allNodes = [] })
                   }}
                   className="add-btn"
                 >
-                  + Add Transaction Code
+                  ➕ Add Response Code
                 </button>
               </div>
             </div>

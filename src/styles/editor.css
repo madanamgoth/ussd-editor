@@ -216,24 +216,160 @@
 /* Edge Styles */
 .react-flow__edge {
   stroke-width: 2;
+  cursor: pointer;
 }
 
 .react-flow__edge-path {
   stroke: #6366f1;
-  stroke-width: 2;
+  stroke-width: 3;
+  cursor: pointer;
+}
+
+/* Create wider invisible hit area for easier edge clicking */
+.react-flow__edge {
+  position: relative;
+}
+
+/* Add invisible wider stroke for better clicking */
+.react-flow__edge .react-flow__edge-path {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Create a wider invisible clickable area using box-shadow technique */
+.react-flow__edge:before {
+  content: "";
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  right: -10px;
+  bottom: -10px;
+  background: transparent;
+  pointer-events: all;
+  cursor: pointer;
+}
+
+/* Hover effect for better feedback */
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke: #4f46e5;
+  stroke-width: 4;
+  transition: all 0.2s ease;
+  filter: drop-shadow(0 0 6px rgba(79, 70, 229, 0.4));
+}
+
+.react-flow__edge:hover .react-flow__arrowhead {
+  fill: #4f46e5;
+  stroke: #4f46e5;
+  transition: all 0.2s ease;
+  filter: drop-shadow(0 0 4px rgba(79, 70, 229, 0.4));
+}
+
+/* Make edge text areas clickable too */
+.react-flow__edge-text,
+.react-flow__edge-textbg {
+  cursor: pointer;
+  pointer-events: all;
+}
+
+/* Add visual feedback for edge selection */
+.react-flow__edge.selectable {
+  cursor: pointer;
+}
+
+.react-flow__edge.selectable:hover {
+  opacity: 1;
+}
+
+/* Improve edge interaction area */
+.react-flow__edge {
+  /* Create larger invisible hit area */
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Make the entire edge group clickable */
+.react-flow__edge .react-flow__edge-interaction {
+  stroke-width: 20;
+  stroke: transparent;
+  fill: none;
+  cursor: pointer;
+}
+
+/* Edge selection feedback */
+.react-flow__edge.selected {
+  z-index: 999;
+}
+
+/* Better visual feedback on hover */
+.react-flow__edge:hover {
+  z-index: 998;
+}
+
+.react-flow__edge:hover .react-flow__edge-text {
+  fill: #1e293b;
+  font-weight: 700;
 }
 
 .react-flow__arrowhead {
   fill: #6366f1;
+  stroke: #6366f1;
 }
 
 .react-flow__edge.selected .react-flow__edge-path {
-  stroke: #4f46e5;
-  stroke-width: 3;
+  stroke: #ef4444;
+  stroke-width: 4;
+  animation: pulse-edge 1s ease-in-out infinite;
 }
 
 .react-flow__edge.selected .react-flow__arrowhead {
-  fill: #4f46e5;
+  fill: #ef4444;
+  stroke: #ef4444;
+}
+
+.react-flow__edge.selected .react-flow__edge-textbg {
+  fill: #fef2f2;
+  stroke: #ef4444;
+  stroke-width: 2;
+}
+
+.react-flow__edge.selected .react-flow__edge-text {
+  fill: #dc2626;
+  font-weight: 700;
+}
+
+/* Pulse animation for selected edges */
+@keyframes pulse-edge {
+  0%, 100% {
+    stroke-opacity: 1;
+  }
+  50% {
+    stroke-opacity: 0.7;
+  }
+}
+
+/* Edge Labels */
+.react-flow__edge-text {
+  font-size: 12px;
+  font-weight: 600;
+  fill: #374151;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.react-flow__edge-textbg {
+  fill: white;
+  fill-opacity: 0.9;
+  stroke: #6366f1;
+  stroke-width: 1;
+  rx: 4;
+  ry: 4;
+}
+
+/* Ensure marker visibility */
+.react-flow__edges .react-flow__arrowhead {
+  fill: #6366f1 !important;
+  stroke: #6366f1 !important;
+  opacity: 1;
 }
 
 /* Connection line when dragging */
@@ -244,6 +380,181 @@
 }
 
 /* Node Handle Styles */
+.react-flow__handle {
+  width: 12px !important;
+  height: 12px !important;
+  border: 3px solid #6366f1 !important;
+  background: white !important;
+  border-radius: 50% !important;
+  transition: all 0.2s ease !important;
+  cursor: pointer !important;
+}
+
+.react-flow__handle:hover {
+  width: 16px !important;
+  height: 16px !important;
+  border-width: 4px !important;
+  border-color: #4f46e5 !important;
+  background: #f0f9ff !important;
+  box-shadow: 0 0 8px rgba(79, 70, 229, 0.4) !important;
+  transform: scale(1.1) !important;
+}
+
+.react-flow__handle.connecting {
+  width: 16px !important;
+  height: 16px !important;
+  border-color: #10b981 !important;
+  background: #dcfce7 !important;
+  animation: pulse-handle 1s ease-in-out infinite !important;
+}
+
+.react-flow__handle-top {
+  top: -8px !important;
+}
+
+.react-flow__handle-bottom {
+  bottom: -8px !important;
+}
+
+.react-flow__handle-left {
+  left: -8px !important;
+}
+
+.react-flow__handle-right {
+  right: -8px !important;
+}
+
+/* Source handles (outgoing connections) */
+.react-flow__handle.source {
+  border-color: #059669 !important;
+  background: #dcfce7 !important;
+}
+
+.react-flow__handle.source:hover {
+  border-color: #047857 !important;
+  background: #bbf7d0 !important;
+  box-shadow: 0 0 12px rgba(5, 150, 105, 0.5) !important;
+}
+
+/* Target handles (incoming connections) */
+.react-flow__handle.target {
+  border-color: #dc2626 !important;
+  background: #fef2f2 !important;
+}
+
+.react-flow__handle.target:hover {
+  border-color: #b91c1c !important;
+  background: #fee2e2 !important;
+  box-shadow: 0 0 12px rgba(220, 38, 38, 0.5) !important;
+}
+
+/* Handle animation for better visibility */
+@keyframes pulse-handle {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.8;
+  }
+}
+
+/* Make handles more visible when node is selected */
+.react-flow__node.selected .react-flow__handle {
+  width: 14px !important;
+  height: 14px !important;
+  border-width: 4px !important;
+  opacity: 1 !important;
+}
+
+/* Better visibility on different node types */
+.react-flow__node[data-nodetype="start"] .react-flow__handle {
+  border-color: #22c55e !important;
+}
+
+.react-flow__node[data-nodetype="end"] .react-flow__handle {
+  border-color: #ef4444 !important;
+}
+
+.react-flow__node[data-nodetype="menu"] .react-flow__handle {
+  border-color: #3b82f6 !important;
+}
+
+.react-flow__node[data-nodetype="input"] .react-flow__handle {
+  border-color: #f59e0b !important;
+}
+
+.react-flow__node[data-nodetype="action"] .react-flow__handle {
+  border-color: #8b5cf6 !important;
+}
+
+/* Ensure handles are always visible */
+.react-flow__handle {
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: all !important;
+  z-index: 10 !important;
+}
+
+/* Make handles visible on all interaction states */
+.react-flow__node:hover .react-flow__handle,
+.react-flow__node.selected .react-flow__handle,
+.react-flow__node .react-flow__handle {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+/* Ensure handles show up well against different backgrounds */
+.react-flow__handle {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Override any inline styles that make handles too small */
+.react-flow__handle[style*="width"] {
+  width: 12px !important;
+  height: 12px !important;
+}
+
+/* Specific overrides for nodes with custom handle styles */
+.menu-node .react-flow__handle,
+.action-node .react-flow__handle,
+.input-node .react-flow__handle,
+.start-node .react-flow__handle,
+.end-node .react-flow__handle {
+  width: 12px !important;
+  height: 12px !important;
+  min-width: 12px !important;
+  min-height: 12px !important;
+}
+
+/* Make handles more prominent on hover or when connecting */
+.react-flow__handle:hover,
+.react-flow__handle.connecting,
+.react-flow__handle.valid {
+  width: 16px !important;
+  height: 16px !important;
+  border-width: 4px !important;
+  z-index: 1000 !important;
+}
+
+/* Better spacing from node edges */
+.react-flow__handle-top {
+  top: -6px !important;
+}
+
+.react-flow__handle-bottom {
+  bottom: -6px !important;
+}
+
+.react-flow__handle-left {
+  left: -6px !important;
+}
+
+.react-flow__handle-right {
+  right: -6px !important;
+}
+
 .node {
   background: white;
   border: 2px solid #e2e8f0;
@@ -291,6 +602,50 @@
   background: #f8fafc;
   border-radius: 0.375rem 0.375rem 0 0;
   position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.node-status {
+  font-size: 0.875rem;
+  margin-left: 0.5rem;
+  flex-shrink: 0;
+}
+
+.node-status.valid {
+  color: #10b981;
+}
+
+.node-status.warning {
+  color: #f59e0b;
+}
+
+.validation-warning {
+  font-size: 0.75rem;
+  color: #ef4444;
+  margin-top: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 0.25rem;
+}
+
+.variable-icon, .pattern-icon {
+  margin-right: 0.25rem;
+  font-size: 0.75rem;
+}
+
+.match-pattern code {
+  background: #f3f4f6;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.7rem;
+}
+
+.node-header-content {
+  flex: 1;
 }
 
 .node-title {
@@ -304,6 +659,36 @@
   font-size: 0.75rem;
   color: #6b7280;
   font-weight: 500;
+}
+
+.node-status {
+  font-size: 1rem;
+  margin-left: 0.5rem;
+}
+
+.node-status.valid {
+  color: #22c55e;
+}
+
+.node-status.warning {
+  color: #f59e0b;
+}
+
+.node-status.error {
+  color: #ef4444;
+}
+
+/* Node validation states */
+.node.valid {
+  border-color: #22c55e;
+}
+
+.node.warning {
+  border-color: #f59e0b;
+}
+
+.node.error {
+  border-color: #ef4444;
 }
 
 .node-preview {
@@ -454,6 +839,27 @@
   border: 1px solid #e9ecef;
 }
 
+/* Templates are info-only, no interaction needed */
+.template-item.info-only {
+  background-color: #f0f9ff;
+  border-color: #bae6fd;
+  cursor: default;
+}
+
+.template-icon {
+  margin-right: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.template-method {
+  font-size: 0.7rem;
+  background: #3b82f6;
+  color: white;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-weight: 600;
+}
+
 .transaction-item.success {
   background-color: #d1fae5;
   border-color: #10b981;
@@ -486,57 +892,202 @@
 
 /* Configuration Panel Styles for ACTION */
 .templates-config, .transaction-codes-config {
-  margin-top: 0.5rem;
+  margin-top: 1rem;
 }
 
-.template-config-item, .transaction-code-item {
+/* Section Header with Add Button */
+.section-header {
   display: flex;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
+  justify-content: space-between;
   align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #e5e7eb;
 }
 
-.template-config-item input {
+.section-header label {
+  font-weight: 600;
+  color: #374151;
+  font-size: 1rem;
+  margin: 0;
+}
+
+.add-template-btn {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+}
+
+.add-template-btn:hover {
+  background: linear-gradient(135deg, #2563eb, #1e40af);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+}
+
+.add-template-btn:active {
+  transform: translateY(0);
+}
+
+/* Template Items */
+.template-config-item {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding: 1rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+
+.template-config-item:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.template-info {
   flex: 1;
-  padding: 0.5rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.template-id {
+  font-weight: 600;
+  color: #374151;
   font-size: 0.9rem;
 }
 
+.template-endpoint {
+  color: #6b7280;
+  font-size: 0.8rem;
+  font-family: 'Courier New', monospace;
+  background: #e5e7eb;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+/* Transaction Code Items */
+.transaction-code-item {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding: 0.75rem;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+
+.transaction-code-item:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.template-config-item input,
 .transaction-code-item input {
   flex: 1;
-  padding: 0.5rem;
+  padding: 0.75rem;
   border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
+  border-radius: 6px;
   font-size: 0.9rem;
+  transition: all 0.2s ease;
 }
 
+.template-config-item input:focus,
+.transaction-code-item input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Button Styling */
 .add-btn, .remove-btn {
   padding: 0.5rem 0.75rem;
   border: none;
-  border-radius: 0.25rem;
+  border-radius: 6px;
   font-size: 0.8rem;
   cursor: pointer;
   font-weight: 500;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 .add-btn {
-  background-color: #3b82f6;
+  background: linear-gradient(135deg, #10b981, #047857);
   color: white;
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
 }
 
 .add-btn:hover {
-  background-color: #2563eb;
+  background: linear-gradient(135deg, #059669, #065f46);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(16, 185, 129, 0.3);
 }
 
 .remove-btn {
-  background-color: #ef4444;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
   color: white;
+  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
 }
 
 .remove-btn:hover {
-  background-color: #dc2626;
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
+}
+
+/* Smaller remove button specifically for template items */
+.template-config-item .remove-btn {
+  padding: 0.375rem 0.5rem;
+  font-size: 0.7rem;
+  min-width: auto;
+  border-radius: 4px;
+}
+
+.template-config-item .remove-btn:hover {
+  transform: translateY(-0.5px);
+}
+
+/* Empty State Messages */
+.no-templates {
+  text-align: center;
+  color: #6b7280;
+  font-style: italic;
+  padding: 2rem 1rem;
+  background: #f9fafb;
+  border: 2px dashed #d1d5db;
+  border-radius: 8px;
+  margin: 1rem 0;
+}
+
+/* Transaction Codes Section */
+.transaction-codes-config {
+  background: #fafbfc;
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.transaction-codes-config .add-btn {
+  margin-top: 0.5rem;
+  width: 100%;
+  justify-content: center;
 }
 
 /* Editor Controls */
@@ -646,91 +1197,125 @@
   height: 100%;
   display: flex;
   flex-direction: column;
+  background: #fafbfc;
 }
 
 .config-header {
   padding: 1.5rem;
   border-bottom: 1px solid #e5e7eb;
-  background: white;
+  background: linear-gradient(135deg, #ffffff, #f8fafc);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .config-header h3 {
   margin: 0;
   color: #1f2937;
-  font-size: 1.125rem;
-  font-weight: 600;
+  font-size: 1.25rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.config-header h3::before {
+  content: '⚙️';
+  font-size: 1.5rem;
 }
 
 .close-config-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  font-size: 1.25rem;
   color: #6b7280;
   cursor: pointer;
-  padding: 0;
-  width: 2rem;
-  height: 2rem;
+  padding: 0.5rem;
+  width: 2.5rem;
+  height: 2.5rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0.25rem;
-  transition: all 0.2s;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  font-weight: bold;
 }
 
 .close-config-btn:hover {
-  background: #f3f4f6;
-  color: #374151;
+  background: #ef4444;
+  color: white;
+  border-color: #dc2626;
+  transform: scale(1.05);
 }
 
 .config-content {
   padding: 1.5rem;
   flex: 1;
   overflow-y: auto;
+  background: #fafbfc;
 }
 
 .no-selection {
   text-align: center;
   color: #6b7280;
   font-style: italic;
-  margin-top: 2rem;
+  margin-top: 3rem;
+  padding: 2rem;
+  background: white;
+  border-radius: 12px;
+  border: 2px dashed #d1d5db;
 }
 
 .config-section {
-  margin-bottom: 1.5rem;
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+.config-section:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  border-color: #d1d5db;
 }
 
 .config-section label {
   display: block;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
   color: #374151;
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .config-section input,
-.config-section textarea {
+.config-section textarea,
+.config-section select {
   width: 100%;
   padding: 0.75rem;
   border: 1px solid #d1d5db;
-  border-radius: 0.375rem;
+  border-radius: 8px;
   font-size: 0.875rem;
-  transition: border-color 0.2s;
+  transition: all 0.2s ease;
+  background: white;
 }
 
 .config-section input:focus,
-.config-section textarea:focus {
+.config-section textarea:focus,
+.config-section select:focus {
   outline: none;
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 .readonly-input {
-  background: #f9fafb;
-  color: #6b7280;
-  cursor: not-allowed;
+  background: #f9fafb !important;
+  color: #6b7280 !important;
+  cursor: not-allowed !important;
 }
 
 .prompts-config {

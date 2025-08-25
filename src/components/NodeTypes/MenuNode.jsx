@@ -30,16 +30,33 @@ const MenuNode = ({ data, isConnectable, selected }) => {
 
   const menuOptions = getMenuOptions();
 
+  // Validation status
+  const hasPrompt = displayPrompt && displayPrompt.trim() !== '';
+  const hasMenuOptions = menuOptions.length > 0;
+  const nodeStatus = hasPrompt && hasMenuOptions ? 'valid' : 'warning';
+
   return (
     <div 
-      className={`node menu-node ${selected ? 'selected' : ''}`}
-      title={`MENU: ${data.label || 'Menu'}\nOptions:\n${menuOptions.map(opt => `${opt.number}. ${opt.text}`).join('\n')}`}
+      className={`node menu-node ${selected ? 'selected' : ''} ${nodeStatus}`}
+      title={`MENU: ${data.label || 'Menu'}\nOptions (${menuOptions.length}):\n${menuOptions.map(opt => `${opt.number}. ${opt.text}`).join('\n')}\nStatus: ${nodeStatus}`}
     >
+      <Handle
+        type="target"
+        position={Position.Left}
+        isConnectable={isConnectable}
+        style={{ background: '#6366f1' }}
+      />
+      
       <div className="node-header">
-        <div className="node-title truncate-text">
-          {data.label || 'Menu'}
+        <div className="node-header-content">
+          <div className="node-title truncate-text">
+            {data.label || 'Menu'}
+          </div>
+          <div className="node-type">MENU</div>
         </div>
-        <div className="node-type">MENU</div>
+        <div className={`node-status ${nodeStatus}`}>
+          {nodeStatus === 'valid' ? '✅' : '⚠️'}
+        </div>
       </div>
       
       <div className="node-preview">
