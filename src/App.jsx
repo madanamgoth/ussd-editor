@@ -55,6 +55,7 @@ const DnDFlow = () => {
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [selectedNode, setSelectedNode] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const { screenToFlowPosition } = useReactFlow();
 
   // Handle edge deletion
@@ -108,7 +109,7 @@ const DnDFlow = () => {
     console.log('Auto-saved at:', flowData.timestamp);
   }, [nodes, edges]);
 
-  // Keyboard shortcuts for deletion
+  // Keyboard shortcuts for deletion and sidebar toggle
   useEffect(() => {
     const handleKeyDown = (event) => {
       // Check if user is typing in an input field, textarea, or contenteditable element
@@ -118,6 +119,13 @@ const DnDFlow = () => {
         activeElement.tagName === 'TEXTAREA' ||
         activeElement.contentEditable === 'true'
       );
+
+      // Handle ESC key to close sidebar
+      if (event.key === 'Escape' && sidebarOpen && !isInputFocused) {
+        setSidebarOpen(false);
+        event.preventDefault();
+        return;
+      }
 
       // Only handle delete/backspace if not typing in an input field
       if ((event.key === 'Delete' || event.key === 'Backspace') && !isInputFocused) {
@@ -141,7 +149,7 @@ const DnDFlow = () => {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [nodes, edges, onEdgeDelete, setNodes]);
+  }, [nodes, edges, onEdgeDelete, setNodes, sidebarOpen, setSidebarOpen]);
 
   // Default edge options with arrow markers
   const defaultEdgeOptions = {
@@ -384,16 +392,41 @@ const DnDFlow = () => {
 
   return (
     <div className="ussd-editor">
-      <div className="sidebar">
-        <NodePalette />
-        <FlowControls 
-          nodes={nodes}
-          edges={edges}
-          onImport={handleImport}
-          onClear={handleClear}
-          onAutoLayout={handleAutoLayout}
-        />
-      </div>
+      {/* Sidebar Toggle Button */}
+      {!sidebarOpen && (
+        <button 
+          className="sidebar-toggle-btn"
+          onClick={() => setSidebarOpen(true)}
+          title="Open Tools Panel"
+        >
+          <span className="toggle-icon">🛠️</span>
+          <span className="toggle-text">Tools</span>
+        </button>
+      )}
+
+      {/* Collapsible Sidebar */}
+      {sidebarOpen && (
+        <div className="sidebar">
+          <div className="sidebar-header">
+            <h2>USSD Tools</h2>
+            <button 
+              className="sidebar-close-btn"
+              onClick={() => setSidebarOpen(false)}
+              title="Close Tools Panel (ESC)"
+            >
+              ×
+            </button>
+          </div>
+          <NodePalette />
+          <FlowControls 
+            nodes={nodes}
+            edges={edges}
+            onImport={handleImport}
+            onClear={handleClear}
+            onAutoLayout={handleAutoLayout}
+          />
+        </div>
+      )}
       
       <div className="canvas-container">
         <div className="reactflow-wrapper" ref={reactFlowWrapper}>
