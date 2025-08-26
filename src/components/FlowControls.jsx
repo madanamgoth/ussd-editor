@@ -23,7 +23,7 @@ const FlowControls = ({ nodes, edges, onImport, onClear, onAutoLayout }) => {
       exportJson = JSON.stringify(graphData, null, 2);
     } else {
       // Export simplified flow data for backend processing
-      const flowData = exportToFlowFormat(nodes);
+      const flowData = exportToFlowFormat(nodes, edges);
       exportJson = JSON.stringify(flowData, null, 2);
     }
     setExportType(type);

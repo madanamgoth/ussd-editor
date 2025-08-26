@@ -180,16 +180,115 @@ export const createEdge = (source, target, sourceHandle = null, animated = true,
   };
 };
 
-export const exportToFlowFormat = (nodes) => {
-  return nodes.map(node => ({
-    id: node.id,
-    type: node.data.type,
-    prompts: node.data.config.prompts,
-    transitions: node.data.config.transitions,
-    fallback: node.data.config.fallback || '',
-    ...(node.data.config.storeAttribute && { storeAttribute: node.data.config.storeAttribute }),
-    ...(node.data.config.templateId && { templateId: node.data.config.templateId })
-  }));
+export const exportToFlowFormat = (nodes, edges) => {
+  return nodes.map(node => {
+    const nodeType = node.data.type;
+    const config = node.data.config;
+    
+    // Build transitions from both config.transitions AND actual visual edges
+    let cleanTransitions = {};
+    
+    // First, get transitions from visual edges (this captures the actual graph connections)
+    if (edges) {
+      const nodeEdges = edges.filter(edge => edge.source === node.id);
+      nodeEdges.forEach(edge => {
+        if (edge.target && edge.target.trim() !== '') {
+          const sourceHandle = edge.sourceHandle || '';
+          
+          if (nodeType === 'INPUT') {
+            // For INPUT nodes, use '*' for any connection
+            cleanTransitions['*'] = edge.target;
+          } else if (nodeType === 'ACTION') {
+            // For ACTION nodes, clean up transaction codes
+            let cleanKey = sourceHandle;
+            if (sourceHandle.startsWith('transaction-')) {
+              cleanKey = sourceHandle.replace('transaction-', '');
+            }
+            if (['200', '400', '500', 'onSuccess', 'onError', 'onBadRequest'].includes(cleanKey)) {
+              cleanTransitions[cleanKey] = edge.target;
+            }
+          } else if (nodeType === 'MENU') {
+            // For MENU nodes, clean up option handles
+            if (sourceHandle.startsWith('option-')) {
+              const optionNumber = sourceHandle.replace('option-', '');
+              cleanTransitions[optionNumber] = edge.target;
+            } else if (sourceHandle === 'fallback') {
+              cleanTransitions['fallback'] = edge.target;
+            } else if (sourceHandle === '*') {
+              cleanTransitions['*'] = edge.target;
+            }
+          } else if (nodeType === 'START') {
+            // For START nodes, use the handle as-is or empty string
+            const key = sourceHandle || '';
+            cleanTransitions[key] = edge.target;
+          }
+        }
+      });
+    }
+    
+    // Then, merge with any manually configured transitions (from config panel)
+    // This ensures manual configurations are preserved if they exist
+    if (config.transitions) {
+      Object.entries(config.transitions).forEach(([key, value]) => {
+        if (value && value.trim() !== '') {
+          if (nodeType === 'MENU') {
+            // For MENU nodes, prefer the cleaned key format
+            const cleanKey = key.startsWith('option-') ? key.replace('option-', '') : key;
+            if (/^\d+$/.test(cleanKey) || cleanKey === 'fallback' || cleanKey === '*') {
+              cleanTransitions[cleanKey] = value;
+            }
+          } else if (nodeType === 'ACTION') {
+            // For ACTION nodes, prefer cleaned transaction codes
+            const cleanKey = key.startsWith('transaction-') ? key.replace('transaction-', '') : key;
+            if (['200', '400', '500', 'onSuccess', 'onError', 'onBadRequest'].includes(cleanKey)) {
+              cleanTransitions[cleanKey] = value;
+            }
+          } else {
+            // For other node types, use as-is if not already set by edges
+            if (!cleanTransitions[key]) {
+              cleanTransitions[key] = value;
+            }
+          }
+        }
+      });
+    }
+
+    // Build the clean node object
+    const cleanNode = {
+      id: node.id,
+      type: nodeType,
+      prompts: config.prompts || {},
+      transitions: cleanTransitions
+    };
+
+    // Add optional fields only if they have meaningful values
+    if (config.storeAttribute && config.storeAttribute.trim() !== '') {
+      cleanNode.storeAttribute = config.storeAttribute;
+    }
+    
+    if (config.variableName && config.variableName.trim() !== '') {
+      cleanNode.storeAttribute = config.variableName; // Use variableName as storeAttribute for compatibility
+    }
+    
+    if (config.templateId && config.templateId.trim() !== '') {
+      cleanNode.templateId = config.templateId;
+    }
+    
+    // For ACTION nodes, extract templateId from the first template
+    if (nodeType === 'ACTION' && config.templates && config.templates.length > 0) {
+      const firstTemplate = config.templates[0];
+      if (firstTemplate._id && firstTemplate._id.trim() !== '') {
+        cleanNode.templateId = firstTemplate._id;
+      }
+    }
+    
+    if (config.fallback && config.fallback.trim() !== '' && nodeType !== 'MENU') {
+      // For MENU nodes, fallback is already in transitions
+      cleanNode.fallback = config.fallback;
+    }
+
+    return cleanNode;
+  });
 };
 
 export const importFromFlowFormat = (flowData) => {
