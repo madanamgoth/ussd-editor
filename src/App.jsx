@@ -99,21 +99,28 @@ const DnDFlow = () => {
 
   // Auto-save functionality
   useEffect(() => {
-    if (nodes.length > 0 || edges.length > 0) {
-      const flowData = {
-        nodes,
-        edges,
-        timestamp: new Date().toISOString()
-      };
-      localStorage.setItem('ussd-editor-autosave', JSON.stringify(flowData));
-      console.log('Auto-saved at:', flowData.timestamp);
-    }
+    const flowData = {
+      nodes,
+      edges,
+      timestamp: new Date().toISOString()
+    };
+    localStorage.setItem('ussd-editor-autosave', JSON.stringify(flowData));
+    console.log('Auto-saved at:', flowData.timestamp);
   }, [nodes, edges]);
 
   // Keyboard shortcuts for deletion
   useEffect(() => {
     const handleKeyDown = (event) => {
-      if (event.key === 'Delete' || event.key === 'Backspace') {
+      // Check if user is typing in an input field, textarea, or contenteditable element
+      const activeElement = document.activeElement;
+      const isInputFocused = activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        activeElement.contentEditable === 'true'
+      );
+
+      // Only handle delete/backspace if not typing in an input field
+      if ((event.key === 'Delete' || event.key === 'Backspace') && !isInputFocused) {
         // Find selected nodes and edges
         const selectedNodes = nodes.filter(node => node.selected);
         const selectedEdges = edges.filter(edge => edge.selected);
