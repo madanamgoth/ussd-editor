@@ -443,54 +443,646 @@ export const validateFlow = (nodes, edges) => {
 };
 
 export const autoLayout = (nodes, edges) => {
-  // Simple auto-layout algorithm
-  const layoutNodes = [...nodes];
-  const visited = new Set();
+  console.log('🎯 AutoLayout starting with:', { nodes, edges });
+  
+  if (!nodes || nodes.length === 0) {
+    console.log('❌ No nodes found!');
+    return nodes;
+  }
+  
+  // Advanced auto-layout with multiple visualization improvements for long flows
+  const layoutNodes = nodes.map(node => ({
+    ...node,
+    position: { ...node.position },
+    data: { ...node.data }
+  }));
+  
+  const nodeMap = new Map(layoutNodes.map(node => [node.id, node]));
+  
+  // 1. Build adjacency list from edges
+  const adjacencyList = new Map();
+  layoutNodes.forEach(node => {
+    adjacencyList.set(node.id, { outgoing: [], incoming: [] });
+  });
+  
+  edges.forEach(edge => {
+    if (adjacencyList.has(edge.source) && adjacencyList.has(edge.target)) {
+      adjacencyList.get(edge.source).outgoing.push(edge.target);
+      adjacencyList.get(edge.target).incoming.push(edge.source);
+    }
+  });
+  
+  // 2. Find optimal starting points
+  const startCandidates = [];
+  let minIncoming = Infinity;
+  
+  layoutNodes.forEach(node => {
+    const incomingCount = adjacencyList.get(node.id).incoming.length;
+    if (incomingCount < minIncoming) {
+      minIncoming = incomingCount;
+      startCandidates.length = 0;
+      startCandidates.push(node);
+    } else if (incomingCount === minIncoming) {
+      startCandidates.push(node);
+    }
+  });
+  
+  let startNode = startCandidates.find(node => node.type === 'start') ||
+                  startCandidates.find(node => node.type === 'menu') ||
+                  startCandidates[0];
+  
+  console.log('Selected start node:', startNode?.id, 'type:', startNode?.type);
+  
+  // 3. Detect flow patterns and apply appropriate layout strategy
+  const totalNodes = layoutNodes.length;
+  const layoutStrategy = getOptimalLayoutStrategy(totalNodes, edges.length);
+  
+  console.log(`📊 Flow Analysis: ${totalNodes} nodes, using ${layoutStrategy} strategy`);
+  
+  // 4. Apply layout based on strategy
+  let layoutResult;
+  switch (layoutStrategy) {
+    case 'compact':
+      layoutResult = applyCompactLayout(layoutNodes, edges, adjacencyList, startNode);
+      break;
+    case 'hierarchical':
+      layoutResult = applyHierarchicalLayout(layoutNodes, edges, adjacencyList, startNode);
+      break;
+    case 'clustered':
+      layoutResult = applyClusteredLayout(layoutNodes, edges, adjacencyList, startNode);
+      break;
+    case 'swim-lane':
+      layoutResult = applySwimLaneLayout(layoutNodes, edges, adjacencyList, startNode);
+      break;
+    default:
+      layoutResult = applyHierarchicalLayout(layoutNodes, edges, adjacencyList, startNode);
+  }
+  
+  // 5. Final optimization for MENU node clutter reduction
+  optimizeMenuNodeSpacing(layoutResult, edges, adjacencyList);
+  
+  console.log(`✅ AutoLayout completed with ${layoutStrategy} strategy`);
+  return layoutResult;
+};
+
+// Final optimization to reduce MENU node visual clutter
+const optimizeMenuNodeSpacing = (nodes, edges, adjacencyList) => {
+  const menuNodes = nodes.filter(node => node.type === 'menu');
+  if (menuNodes.length === 0) return;
+  
+  console.log(`🍽️ Final optimization for ${menuNodes.length} MENU nodes`);
+  
+  menuNodes.forEach(menuNode => {
+    const connections = adjacencyList.get(menuNode.id);
+    if (!connections) return;
+    
+    const outgoingCount = connections.outgoing.length;
+    
+    // For MENU nodes with many options, add buffer space
+    if (outgoingCount > 4) {
+      // Find nearby nodes that might be too close
+      const nearbyNodes = findNearbyNodes(menuNode, nodes, 300); // Within 300px
+      
+      if (nearbyNodes.length > 2) {
+        // Add some spacing to reduce visual clutter
+        adjustSurroundingNodes(menuNode, nearbyNodes, outgoingCount);
+      }
+    }
+  });
+};
+
+// Find nodes within a certain distance of a menu node
+const findNearbyNodes = (centerNode, allNodes, maxDistance) => {
+  return allNodes.filter(node => {
+    if (node.id === centerNode.id) return false;
+    
+    const distance = Math.sqrt(
+      Math.pow(node.position.x - centerNode.position.x, 2) +
+      Math.pow(node.position.y - centerNode.position.y, 2)
+    );
+    
+    return distance <= maxDistance;
+  });
+};
+
+// Adjust surrounding nodes to give MENU nodes more breathing room
+const adjustSurroundingNodes = (menuNode, nearbyNodes, connectionCount) => {
+  const bufferDistance = Math.min(connectionCount * 15, 80); // Max 80px buffer
+  
+  nearbyNodes.forEach(node => {
+    const dx = node.position.x - menuNode.position.x;
+    const dy = node.position.y - menuNode.position.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance < 250) { // Too close
+      const factor = (250 + bufferDistance) / distance;
+      node.position.x = menuNode.position.x + dx * factor;
+      node.position.y = menuNode.position.y + dy * factor;
+    }
+  });
+  
+  console.log(`🎯 Adjusted ${nearbyNodes.length} nodes around MENU with ${connectionCount} connections`);
+};
+
+// Determine optimal layout strategy based on flow characteristics
+const getOptimalLayoutStrategy = (nodeCount, edgeCount) => {
+  const complexity = edgeCount / nodeCount; // Average connections per node
+  
+  if (nodeCount <= 10) return 'compact';
+  if (nodeCount <= 25) return 'hierarchical';
+  if (complexity > 2.5) return 'clustered'; // Highly connected
+  return 'swim-lane'; // Long flows
+};
+
+// Compact layout for small flows (≤10 nodes)
+const applyCompactLayout = (nodes, edges, adjacencyList, startNode) => {
+  console.log('🎯 Applying Compact Layout');
+  
+  const levels = assignLevels(nodes, adjacencyList, startNode);
+  const levelGroups = groupByLevels(nodes, levels);
+  
+  // Tight spacing for compact view
+  const nodeWidth = 200;
+  const nodeHeight = 140;
+  const horizontalSpacing = 80;
+  const verticalSpacing = 30;
+  
+  positionNodesByLevels(levelGroups, nodeWidth, nodeHeight, horizontalSpacing, verticalSpacing);
+  return nodes;
+};
+
+// Hierarchical layout for medium flows (11-25 nodes)
+const applyHierarchicalLayout = (nodes, edges, adjacencyList, startNode) => {
+  console.log('🎯 Applying Hierarchical Layout with MENU optimization');
+  
+  const levels = assignLevels(nodes, adjacencyList, startNode);
+  const levelGroups = groupByLevels(nodes, levels);
+  
+  // Enhanced spacing to reduce MENU node clutter
+  const nodeWidth = 250;
+  const nodeHeight = 180;
+  const horizontalSpacing = 140; // Increased from 120
+  const verticalSpacing = 80; // Increased from 60
+  
+  // Sort nodes within levels with MENU-aware organization
+  levelGroups.forEach((nodesInLevel, levelIndex) => {
+    organizeNodesInLevel(nodesInLevel, levelIndex);
+  });
+  
+  positionNodesByLevels(levelGroups, nodeWidth, nodeHeight, horizontalSpacing, verticalSpacing);
+  optimizeEdgeLayout(nodes, edges, levelGroups, nodeHeight + verticalSpacing);
+  
+  // Special post-processing for MENU nodes to reduce visual clutter
+  postProcessMenuNodes(nodes, edges, adjacencyList);
+  
+  return nodes;
+};
+
+// Organize nodes within a level for better visual clarity
+const organizeNodesInLevel = (nodesInLevel, levelIndex) => {
+  // Separate MENU nodes from others
+  const menuNodes = nodesInLevel.filter(node => node.type === 'menu');
+  const otherNodes = nodesInLevel.filter(node => node.type !== 'menu');
+  
+  // Sort MENU nodes by connection count (fewer connections first to reduce clutter)
+  menuNodes.sort((a, b) => {
+    // If we have access to adjacency list, use it; otherwise use simple heuristic
+    return 0; // Keep original order if no adjacency data
+  });
+  
+  // Sort other nodes by type priority
+  const typePriority = { 'start': 0, 'input': 2, 'action': 3, 'end': 4 };
+  otherNodes.sort((a, b) => {
+    const aPriority = typePriority[a.type] || 5;
+    const bPriority = typePriority[b.type] || 5;
+    return aPriority - bPriority;
+  });
+  
+  // Recombine: other nodes first, then MENU nodes (to give MENU nodes more space)
+  nodesInLevel.length = 0;
+  nodesInLevel.push(...otherNodes, ...menuNodes);
+  
+  console.log(`📋 Level ${levelIndex}: ${otherNodes.length} regular nodes, ${menuNodes.length} MENU nodes`);
+};
+
+// Post-process MENU nodes to improve visual organization
+const postProcessMenuNodes = (nodes, edges, adjacencyList) => {
+  const menuNodes = nodes.filter(node => node.type === 'menu');
+  
+  console.log(`🍽️ Post-processing ${menuNodes.length} MENU nodes for better organization`);
+  
+  menuNodes.forEach(menuNode => {
+    const connections = adjacencyList.get(menuNode.id);
+    if (connections && connections.outgoing.length > 3) {
+      // For MENU nodes with many connections, slightly adjust positioning
+      adjustMenuNodePosition(menuNode, connections, nodes);
+    }
+  });
+};
+
+// Adjust MENU node position to better accommodate many connections
+const adjustMenuNodePosition = (menuNode, connections, allNodes) => {
+  const connectedNodes = allNodes.filter(node => 
+    connections.outgoing.includes(node.id) || connections.incoming.includes(node.id)
+  );
+  
+  if (connectedNodes.length > 4) {
+    // Add some extra horizontal spacing for nodes with many connections
+    const extraSpacing = (connectedNodes.length - 4) * 20;
+    menuNode.position.x += extraSpacing;
+    
+    console.log(`🎯 Adjusted MENU node position: +${extraSpacing}px for ${connectedNodes.length} connections`);
+  }
+};
+
+// Clustered layout for highly connected flows
+const applyClusteredLayout = (nodes, edges, adjacencyList, startNode) => {
+  console.log('🎯 Applying Clustered Layout for highly connected flow');
+  
+  // Find high-degree nodes (especially MENU nodes) that need special handling
+  const highDegreeNodes = nodes.filter(node => {
+    const connections = adjacencyList.get(node.id);
+    const totalDegree = connections.incoming.length + connections.outgoing.length;
+    return totalDegree >= 3; // Nodes with 3+ connections
+  });
+  
+  console.log(`📊 Found ${highDegreeNodes.length} high-degree nodes (including MENU nodes)`);
+  
+  const positioned = new Set();
+  const clusters = [];
+  
+  // Start with the start node
+  if (startNode) {
+    startNode.position = { x: 100, y: 100 };
+    positioned.add(startNode.id);
+  }
+  
+  // Create clusters around high-degree nodes (especially MENU nodes)
+  highDegreeNodes.forEach((centralNode, clusterIndex) => {
+    if (positioned.has(centralNode.id)) return;
+    
+    const cluster = createMenuCluster(centralNode, adjacencyList, nodes, positioned, clusterIndex);
+    clusters.push(cluster);
+  });
+  
+  // Position remaining nodes in a simple grid
+  const unpositioned = nodes.filter(node => !positioned.has(node.id));
+  const gridCols = Math.ceil(Math.sqrt(unpositioned.length));
+  
+  unpositioned.forEach((node, index) => {
+    const row = Math.floor(index / gridCols);
+    const col = index % gridCols;
+    node.position = {
+      x: col * 300 + 100,
+      y: row * 200 + 600 // Position below clusters
+    };
+    positioned.add(node.id);
+  });
+  
+  console.log(`📊 Created ${clusters.length} clusters, ${unpositioned.length} additional nodes`);
+  return nodes;
+};
+
+// Create a cluster around a central node (especially for MENU nodes)
+const createMenuCluster = (centralNode, adjacencyList, allNodes, positioned, clusterIndex) => {
+  const connections = adjacencyList.get(centralNode.id);
+  const connectedNodeIds = [...connections.incoming, ...connections.outgoing];
+  const connectedNodes = allNodes.filter(node => connectedNodeIds.includes(node.id));
+  
+  console.log(`🎯 Creating cluster ${clusterIndex} around ${centralNode.type || 'unknown'} node with ${connectedNodes.length} connections`);
+  
+  // Position central node
+  const centerX = 200 + clusterIndex * 400;
+  const centerY = 200 + clusterIndex * 300;
+  
+  if (!positioned.has(centralNode.id)) {
+    centralNode.position = { x: centerX, y: centerY };
+    positioned.add(centralNode.id);
+  }
+  
+  // Arrange connected nodes in a smart pattern around the central node
+  arrangeNodesAroundCenter(centralNode, connectedNodes, positioned, centerX, centerY);
+  
+  return {
+    center: centralNode,
+    nodes: connectedNodes,
+    position: { x: centerX, y: centerY }
+  };
+};
+
+// Arrange nodes around a center node in a circular/radial pattern
+const arrangeNodesAroundCenter = (centralNode, connectedNodes, positioned, centerX, centerY) => {
+  const unpositioned = connectedNodes.filter(node => !positioned.has(node.id));
+  const radius = Math.max(150, unpositioned.length * 25); // Dynamic radius based on node count
+  
+  // Special handling for MENU nodes - organize by option numbers if available
+  if (centralNode.type === 'menu') {
+    arrangeMenuOptions(centralNode, unpositioned, positioned, centerX, centerY, radius);
+  } else {
+    // Standard radial arrangement for other node types
+    arrangeRadially(unpositioned, positioned, centerX, centerY, radius);
+  }
+};
+
+// Special arrangement for MENU node options to reduce clutter
+const arrangeMenuOptions = (menuNode, connectedNodes, positioned, centerX, centerY, radius) => {
+  console.log(`🍽️ Arranging ${connectedNodes.length} options around MENU node`);
+  
+  // Try to extract option numbers from node data or connections
+  const sortedNodes = connectedNodes.sort((a, b) => {
+    const aOption = extractOptionNumber(a, menuNode.id);
+    const bOption = extractOptionNumber(b, menuNode.id);
+    return aOption - bOption;
+  });
+  
+  // Arrange in a semi-circle below the menu node for better readability
+  sortedNodes.forEach((node, index) => {
+    if (positioned.has(node.id)) return;
+    
+    const angle = Math.PI + (index / (sortedNodes.length - 1 || 1)) * Math.PI; // Semi-circle below
+    const x = centerX + Math.cos(angle) * radius;
+    const y = centerY + Math.sin(angle) * radius + 50; // Offset down
+    
+    node.position = { x, y };
+    positioned.add(node.id);
+  });
+};
+
+// Extract option number from node data (fallback to index)
+const extractOptionNumber = (node, menuNodeId) => {
+  // Try to extract from node data, label, or title
+  const text = node.data?.label || node.data?.title || '';
+  const match = text.match(/(\d+)/);
+  return match ? parseInt(match[1]) : 999; // High number for unmatched
+};
+
+// Standard radial arrangement
+const arrangeRadially = (nodes, positioned, centerX, centerY, radius) => {
+  nodes.forEach((node, index) => {
+    if (positioned.has(node.id)) return;
+    
+    const angle = (index / nodes.length) * 2 * Math.PI;
+    const x = centerX + Math.cos(angle) * radius;
+    const y = centerY + Math.sin(angle) * radius;
+    
+    node.position = { x, y };
+    positioned.add(node.id);
+  });
+};
+
+// Swim-lane layout for very long flows (>25 nodes)
+const applySwimLaneLayout = (nodes, edges, adjacencyList, startNode) => {
+  console.log('🎯 Applying Swim-Lane Layout for long flow');
+  
+  // Enhanced swim lanes with better MENU node handling
+  const swimLanes = new Map([
+    ['start', { nodes: [], y: 50, color: '#10b981' }],
+    ['menu', { nodes: [], y: 350, color: '#3b82f6' }],
+    ['input', { nodes: [], y: 650, color: '#f59e0b' }],
+    ['action', { nodes: [], y: 950, color: '#8b5cf6' }],
+    ['end', { nodes: [], y: 1250, color: '#ef4444' }]
+  ]);
+  
+  // Assign nodes to swim lanes
+  nodes.forEach(node => {
+    const laneKey = node.type || 'other';
+    if (swimLanes.has(laneKey)) {
+      swimLanes.get(laneKey).nodes.push(node);
+    } else {
+      if (!swimLanes.has('other')) {
+        swimLanes.set('other', { nodes: [], y: 1550, color: '#64748b' });
+      }
+      swimLanes.get('other').nodes.push(node);
+    }
+  });
+  
+  // Special handling for MENU nodes to reduce clutter
+  const menuLane = swimLanes.get('menu');
+  if (menuLane && menuLane.nodes.length > 0) {
+    organizeMenuNodesForClarity(menuLane.nodes, edges, adjacencyList);
+  }
+  
+  // Position nodes within each swim lane with smart spacing
+  swimLanes.forEach((lane, laneType) => {
+    const laneNodes = lane.nodes;
+    const baseSpacing = 280;
+    
+    // Adjust spacing based on lane density and connections
+    const spacing = calculateOptimalSpacing(laneNodes, edges, baseSpacing);
+    
+    laneNodes.forEach((node, index) => {
+      node.position = {
+        x: index * spacing + 100,
+        y: lane.y
+      };
+    });
+    
+    console.log(`📊 ${laneType.toUpperCase()} lane: ${laneNodes.length} nodes, spacing: ${spacing}px`);
+  });
+  
+  return nodes;
+};
+
+// Special organization for MENU nodes to reduce visual clutter
+const organizeMenuNodesForClarity = (menuNodes, edges, adjacencyList) => {
+  console.log('🎯 Organizing MENU nodes for better clarity');
+  
+  // Sort MENU nodes by number of outgoing connections (most connected first)
+  menuNodes.sort((a, b) => {
+    const aConnections = adjacencyList.get(a.id).outgoing.length;
+    const bConnections = adjacencyList.get(b.id).outgoing.length;
+    return bConnections - aConnections; // Descending order
+  });
+  
+  // Group MENU nodes by their connection patterns
+  const menuGroups = new Map();
+  
+  menuNodes.forEach(menuNode => {
+    const connections = adjacencyList.get(menuNode.id).outgoing;
+    const groupKey = getMenuGroupKey(menuNode, connections, edges);
+    
+    if (!menuGroups.has(groupKey)) {
+      menuGroups.set(groupKey, []);
+    }
+    menuGroups.get(groupKey).push(menuNode);
+  });
+  
+  console.log(`📊 Created ${menuGroups.size} MENU groups to reduce clutter`);
+  
+  // Reorganize the menuNodes array based on groups
+  let reorganizedNodes = [];
+  menuGroups.forEach((groupNodes, groupKey) => {
+    console.log(`📋 Group "${groupKey}": ${groupNodes.length} nodes`);
+    reorganizedNodes = reorganizedNodes.concat(groupNodes);
+  });
+  
+  // Update the original array
+  menuNodes.length = 0;
+  menuNodes.push(...reorganizedNodes);
+};
+
+// Determine grouping key for MENU nodes based on their connections
+const getMenuGroupKey = (menuNode, connections, edges) => {
+  if (connections.length === 0) return 'isolated';
+  if (connections.length === 1) return 'simple';
+  if (connections.length <= 3) return 'standard';
+  if (connections.length <= 6) return 'complex';
+  return 'hub'; // Very connected nodes
+};
+
+// Calculate optimal spacing based on node density and connections
+const calculateOptimalSpacing = (laneNodes, edges, baseSpacing) => {
+  if (laneNodes.length <= 3) return baseSpacing + 50; // More space for few nodes
+  if (laneNodes.length <= 6) return baseSpacing;
+  if (laneNodes.length <= 10) return baseSpacing - 30;
+  return Math.max(baseSpacing - 50, 200); // Minimum 200px spacing
+};
+
+// Helper functions
+const assignLevels = (nodes, adjacencyList, startNode) => {
   const levels = new Map();
+  const visited = new Set();
+  const queue = [{ nodeId: startNode.id, level: 0 }];
   
-  // Find start node
-  const startNode = layoutNodes.find(node => node.type === 'start');
-  if (!startNode) return layoutNodes;
-  
-  // BFS to assign levels
-  const queue = [{ node: startNode, level: 0 }];
   levels.set(startNode.id, 0);
   visited.add(startNode.id);
   
   while (queue.length > 0) {
-    const { node, level } = queue.shift();
-    const transitions = node.data.config.transitions || {};
+    const { nodeId, level } = queue.shift();
+    const outgoing = adjacencyList.get(nodeId).outgoing;
     
-    Object.values(transitions).forEach(targetId => {
-      if (targetId && !visited.has(targetId)) {
-        const targetNode = layoutNodes.find(n => n.id === targetId);
-        if (targetNode) {
-          levels.set(targetId, level + 1);
-          visited.add(targetId);
-          queue.push({ node: targetNode, level: level + 1 });
-        }
+    outgoing.forEach(targetId => {
+      if (!visited.has(targetId)) {
+        levels.set(targetId, level + 1);
+        visited.add(targetId);
+        queue.push({ nodeId: targetId, level: level + 1 });
       }
     });
   }
   
-  // Position nodes based on levels
-  const levelGroups = new Map();
-  layoutNodes.forEach(node => {
-    const level = levels.get(node.id) || 0;
-    if (!levelGroups.has(level)) {
-      levelGroups.set(level, []);
+  // Handle disconnected components
+  nodes.forEach(node => {
+    if (!levels.has(node.id)) {
+      levels.set(node.id, 0);
     }
+  });
+  
+  return levels;
+};
+
+const groupByLevels = (nodes, levels) => {
+  const levelGroups = new Map();
+  const maxLevel = Math.max(...levels.values());
+  
+  for (let i = 0; i <= maxLevel; i++) {
+    levelGroups.set(i, []);
+  }
+  
+  nodes.forEach(node => {
+    const level = levels.get(node.id);
     levelGroups.get(level).push(node);
   });
   
+  return levelGroups;
+};
+
+const positionNodesByLevels = (levelGroups, nodeWidth, nodeHeight, horizontalSpacing, verticalSpacing) => {
+  const levelWidth = nodeWidth + horizontalSpacing;
+  
   levelGroups.forEach((nodesInLevel, level) => {
+    const levelHeight = nodesInLevel.length * (nodeHeight + verticalSpacing);
+    const startY = -levelHeight / 2 + 400; // Center vertically with offset
+    
     nodesInLevel.forEach((node, index) => {
       node.position = {
-        x: level * 300 + 50,
-        y: index * 200 + 50
+        x: level * levelWidth + 50,
+        y: startY + index * (nodeHeight + verticalSpacing)
       };
     });
   });
+};
+
+const getClusterKey = (node, adjacencyList) => {
+  // Group by node type and connection density
+  const connections = adjacencyList.get(node.id);
+  const totalConnections = connections.incoming.length + connections.outgoing.length;
   
-  return layoutNodes;
+  if (totalConnections === 0) return 'isolated';
+  if (totalConnections >= 4) return `highly-connected-${node.type}`;
+  return `normal-${node.type}`;
+};
+
+const positionNodesInCluster = (nodes, clusterX, clusterY, clusterWidth, clusterHeight) => {
+  const nodesPerRow = Math.ceil(Math.sqrt(nodes.length));
+  const nodeSpacing = Math.min(clusterWidth / nodesPerRow, clusterHeight / nodesPerRow) * 0.8;
+  
+  nodes.forEach((node, index) => {
+    const row = Math.floor(index / nodesPerRow);
+    const col = index % nodesPerRow;
+    
+    node.position = {
+      x: clusterX + col * nodeSpacing + nodeSpacing / 2,
+      y: clusterY + row * nodeSpacing + nodeSpacing / 2
+    };
+  });
+};
+
+// Helper function to minimize edge crossings
+const optimizeEdgeLayout = (nodes, edges, levelGroups, nodeSpacing) => {
+  console.log('🔄 Optimizing edge layout to reduce crossings...');
+  
+  // For each level, try to minimize crossings with the next level
+  levelGroups.forEach((currentLevel, levelIndex) => {
+    const nextLevel = levelGroups.get(levelIndex + 1);
+    if (!nextLevel || nextLevel.length <= 1) return;
+    
+    // Count connections between current and next level
+    const connections = new Map();
+    currentLevel.forEach(sourceNode => {
+      edges.forEach(edge => {
+        if (edge.source === sourceNode.id) {
+          const targetNode = nextLevel.find(n => n.id === edge.target);
+          if (targetNode) {
+            if (!connections.has(sourceNode.id)) {
+              connections.set(sourceNode.id, []);
+            }
+            connections.get(sourceNode.id).push(targetNode.id);
+          }
+        }
+      });
+    });
+    
+    // Simple reordering to reduce crossings
+    const reorderedNextLevel = [...nextLevel];
+    reorderedNextLevel.sort((a, b) => {
+      // Find average position of sources connecting to each target
+      const aConnections = [];
+      const bConnections = [];
+      
+      connections.forEach((targets, sourceId) => {
+        if (targets.includes(a.id)) {
+          const sourceNode = currentLevel.find(n => n.id === sourceId);
+          if (sourceNode) aConnections.push(sourceNode.position.y);
+        }
+        if (targets.includes(b.id)) {
+          const sourceNode = currentLevel.find(n => n.id === sourceId);
+          if (sourceNode) bConnections.push(sourceNode.position.y);
+        }
+      });
+      
+      const aAvg = aConnections.length > 0 ? 
+        aConnections.reduce((sum, y) => sum + y, 0) / aConnections.length : a.position.y;
+      const bAvg = bConnections.length > 0 ? 
+        bConnections.reduce((sum, y) => sum + y, 0) / bConnections.length : b.position.y;
+      
+      return aAvg - bAvg;
+    });
+    
+    // Update positions for reordered nodes
+    reorderedNextLevel.forEach((node, index) => {
+      const levelHeight = reorderedNextLevel.length * nodeSpacing;
+      const startY = -levelHeight / 2 + 300;
+      node.position.y = startY + index * nodeSpacing;
+    });
+  });
 };

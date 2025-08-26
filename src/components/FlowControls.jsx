@@ -11,6 +11,27 @@ const FlowControls = ({ nodes, edges, onImport, onClear, onAutoLayout }) => {
   const [exportType, setExportType] = useState('flow'); // 'flow' or 'graph'
   const [validationResult, setValidationResult] = useState(null);
 
+  // Calculate flow complexity
+  const getFlowComplexity = () => {
+    if (nodes.length === 0) return 'Empty';
+    const avgConnections = edges.length / nodes.length;
+    if (avgConnections < 1) return 'Simple';
+    if (avgConnections < 2) return 'Medium';
+    if (avgConnections < 3) return 'Complex';
+    return 'Very Complex';
+  };
+
+  // Zoom to fit all nodes
+  const handleZoomToFit = () => {
+    // This will be handled by the parent component
+    if (window.reactFlowInstance) {
+      window.reactFlowInstance.fitView({ 
+        padding: 0.1,
+        duration: 800 
+      });
+    }
+  };
+
   const handleExport = (type = 'flow') => {
     let exportJson;
     if (type === 'graph') {
@@ -138,6 +159,16 @@ const FlowControls = ({ nodes, edges, onImport, onClear, onAutoLayout }) => {
     URL.revokeObjectURL(url);
   };
 
+  // Generate unique filename with timestamp
+  const generateFilename = (type) => {
+    const now = new Date();
+    const timestamp = now.getTime(); // Unix timestamp like JOLT spec
+    const dateStr = now.toISOString().slice(0, 19).replace(/[T:]/g, '-'); // YYYY-MM-DD-HH-MM-SS
+    
+    // Use same pattern as JOLT spec exports for consistency
+    return type === 'graph' ? `ussd-graph-${timestamp}.json` : `ussd-flow-${timestamp}.json`;
+  };
+
   return (
     <div className="flow-controls">
       <div className="controls-header">
@@ -167,9 +198,41 @@ const FlowControls = ({ nodes, edges, onImport, onClear, onAutoLayout }) => {
           🎯 Auto Layout
         </button>
         
+        <button onClick={handleZoomToFit} className="control-btn zoom-btn">
+          🔍 Zoom to Fit
+        </button>
+        
         <button onClick={onClear} className="control-btn clear-btn">
           🗑️ Clear All
         </button>
+      </div>
+
+      {/* Flow Statistics */}
+      <div className="flow-stats">
+        <h4>📊 Flow Statistics</h4>
+        <div className="stats-grid">
+          <div className="stat-item">
+            <span className="stat-label">Nodes:</span>
+            <span className="stat-value">{nodes.length}</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">Connections:</span>
+            <span className="stat-value">{edges.length}</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">Complexity:</span>
+            <span className="stat-value">{getFlowComplexity()}</span>
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">MENU Nodes:</span>
+            <span className="stat-value menu-count">
+              {nodes.filter(n => n.type === 'menu').length}
+              {nodes.filter(n => n.type === 'menu').length > 3 && (
+                <span className="optimization-badge">🍽️ Optimized</span>
+              )}
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Export Modal */}
@@ -198,7 +261,7 @@ const FlowControls = ({ nodes, edges, onImport, onClear, onAutoLayout }) => {
                   📋 Copy to Clipboard
                 </button>
                 <button 
-                  onClick={() => downloadJson(exportData, exportType === 'graph' ? 'ussd-graph.json' : 'ussd-flow.json')}
+                  onClick={() => downloadJson(exportData, generateFilename(exportType))}
                   className="action-btn download-btn"
                 >
                   💾 Download {exportType === 'graph' ? 'Graph' : 'Flow'} JSON

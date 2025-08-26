@@ -386,9 +386,34 @@ const DnDFlow = () => {
   }, [setNodes, setEdges]);
 
   const handleAutoLayout = useCallback(() => {
+    console.log('🎯 Auto Layout clicked!');
+    console.log('Current nodes:', nodes);
+    console.log('Current edges:', edges);
+    
     const layoutedNodes = autoLayout(nodes, edges);
-    setNodes(layoutedNodes);
-  }, [nodes, edges, setNodes]);
+    console.log('Layouted nodes:', layoutedNodes);
+    
+    // Force React Flow to re-render by creating completely new node objects
+    const updatedNodes = layoutedNodes.map(node => ({
+      ...node,
+      position: { ...node.position },
+      data: { ...node.data }
+    }));
+    
+    setNodes(updatedNodes);
+    
+    // Small delay to ensure nodes are updated, then fit view
+    setTimeout(() => {
+      if (reactFlowInstance) {
+        reactFlowInstance.fitView({ 
+          padding: 50,
+          duration: 800
+        });
+      }
+    }, 100);
+    
+    console.log('✅ Auto Layout completed - React Flow should update now');
+  }, [nodes, edges, setNodes, reactFlowInstance]);
 
   return (
     <div className="ussd-editor">
@@ -436,7 +461,10 @@ const DnDFlow = () => {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
-            onInit={setReactFlowInstance}
+            onInit={(instance) => {
+              setReactFlowInstance(instance);
+              window.reactFlowInstance = instance; // Global reference for zoom controls
+            }}
             onDrop={onDrop}
             onDragOver={onDragOver}
             onEdgesDelete={onEdgeDelete}
