@@ -338,21 +338,36 @@ const DnDFlow = () => {
     [screenToFlowPosition, setNodes, updateNodeData]
   );
 
-  const handleImport = useCallback((flowData) => {
-    const importedNodes = importFromFlowFormat(flowData);
-    const importedEdges = generateEdgesFromNodes(importedNodes);
-    
-    // Add update function to imported nodes
-    const nodesWithUpdate = importedNodes.map(node => ({
-      ...node,
-      data: {
-        ...node.data,
-        updateNodeData: updateNodeData
-      }
-    }));
-    
-    setNodes(nodesWithUpdate);
-    setEdges(importedEdges);
+  const handleImport = useCallback((importData, importType = 'flow') => {
+    if (importType === 'graph') {
+      // Graph format - direct import of nodes and edges
+      const nodesWithUpdate = importData.nodes.map(node => ({
+        ...node,
+        data: {
+          ...node.data,
+          updateNodeData: updateNodeData
+        }
+      }));
+      
+      setNodes(nodesWithUpdate);
+      setEdges(importData.edges || []);
+    } else {
+      // Flow format - convert from simplified format
+      const importedNodes = importFromFlowFormat(importData);
+      const importedEdges = generateEdgesFromNodes(importedNodes);
+      
+      // Add update function to imported nodes
+      const nodesWithUpdate = importedNodes.map(node => ({
+        ...node,
+        data: {
+          ...node.data,
+          updateNodeData: updateNodeData
+        }
+      }));
+      
+      setNodes(nodesWithUpdate);
+      setEdges(importedEdges);
+    }
   }, [setNodes, setEdges, updateNodeData]);
 
   const handleClear = useCallback(() => {

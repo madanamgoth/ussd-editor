@@ -8,24 +8,86 @@ const FlowControls = ({ nodes, edges, onImport, onClear, onAutoLayout }) => {
   const [showValidation, setShowValidation] = useState(false);
   const [importData, setImportData] = useState('');
   const [exportData, setExportData] = useState('');
+  const [exportType, setExportType] = useState('flow'); // 'flow' or 'graph'
   const [validationResult, setValidationResult] = useState(null);
 
-  const handleExport = () => {
-    const flowData = exportToFlowFormat(nodes);
-    const exportJson = JSON.stringify(flowData, null, 2);
+  const handleExport = (type = 'flow') => {
+    let exportJson;
+    if (type === 'graph') {
+      // Export complete graph data with positions, visual properties, etc.
+      const graphData = {
+        nodes,
+        edges,
+        timestamp: new Date().toISOString()
+      };
+      exportJson = JSON.stringify(graphData, null, 2);
+    } else {
+      // Export simplified flow data for backend processing
+      const flowData = exportToFlowFormat(nodes);
+      exportJson = JSON.stringify(flowData, null, 2);
+    }
+    setExportType(type);
     setExportData(exportJson);
     setShowExport(true);
   };
 
   const handleImport = () => {
     try {
-      const flowData = JSON.parse(importData);
-      onImport(flowData);
+      const importedData = JSON.parse(importData);
+      
+      // Check if it's a graph format (has nodes and edges arrays) or flow format (array of nodes)
+      if (importedData.nodes && importedData.edges && Array.isArray(importedData.nodes)) {
+        // Graph format - import complete graph
+        onImport(importedData, 'graph');
+      } else if (Array.isArray(importedData)) {
+        // Flow format - import simplified flow
+        onImport(importedData, 'flow');
+      } else {
+        throw new Error('Unknown format');
+      }
+      
       setShowImport(false);
       setImportData('');
     } catch (error) {
-      alert('Invalid JSON format. Please check your data.');
+      alert('Invalid JSON format. Please check your data and ensure it\'s a valid graph or flow JSON format.');
     }
+  };
+
+  const handleFileImport = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            const importedData = JSON.parse(event.target.result);
+            
+            // Check if it's a graph format or flow format
+            if (importedData.nodes && importedData.edges && Array.isArray(importedData.nodes)) {
+              // Graph format - import complete graph
+              onImport(importedData, 'graph');
+            } else if (Array.isArray(importedData)) {
+              // Flow format - import simplified flow
+              onImport(importedData, 'flow');
+            } else {
+              throw new Error('Unknown format');
+            }
+            
+            setShowImport(false);
+            setImportData('');
+          } catch (error) {
+            alert('Invalid JSON file. Please check your file format.');
+          }
+        };
+        reader.readAsText(file);
+      }
+    };
+    
+    input.click();
   };
 
   const handleAIGenerate = (generatedFlow) => {
@@ -85,12 +147,16 @@ const FlowControls = ({ nodes, edges, onImport, onClear, onAutoLayout }) => {
       <div className="controls-buttons">
         <AIFlowGenerator onGenerate={handleAIGenerate} />
         
-        <button onClick={handleExport} className="control-btn export-btn">
+        <button onClick={() => handleExport('flow')} className="control-btn export-btn">
           📤 Export Flow
         </button>
         
+        <button onClick={() => handleExport('graph')} className="control-btn export-btn graph-export">
+          🎨 Export Graph
+        </button>
+        
         <button onClick={() => setShowImport(true)} className="control-btn import-btn">
-          📥 Import Flow
+          📥 Import Graph
         </button>
         
         <button onClick={handleValidate} className="control-btn validate-btn">
@@ -111,11 +177,19 @@ const FlowControls = ({ nodes, edges, onImport, onClear, onAutoLayout }) => {
         <div className="modal-overlay">
           <div className="modal-content large">
             <div className="modal-header">
-              <h3>Export Flow JSON</h3>
+              <h3>{exportType === 'graph' ? 'Export Graph JSON' : 'Export Flow JSON'}</h3>
               <button onClick={() => setShowExport(false)} className="close-btn">×</button>
             </div>
             
             <div className="modal-body">
+              <div className="export-info">
+                {exportType === 'graph' ? (
+                  <p>🎨 <strong>Complete Graph Export:</strong> Includes all visual properties, positions, and canvas state. Use this to save/restore your complete editor state.</p>
+                ) : (
+                  <p>📤 <strong>Flow Export:</strong> Simplified format for backend processing. Contains only business logic without visual properties.</p>
+                )}
+              </div>
+              
               <div className="export-actions">
                 <button 
                   onClick={() => copyToClipboard(exportData)}
@@ -124,10 +198,10 @@ const FlowControls = ({ nodes, edges, onImport, onClear, onAutoLayout }) => {
                   📋 Copy to Clipboard
                 </button>
                 <button 
-                  onClick={() => downloadJson(exportData, 'ussd-flow.json')}
+                  onClick={() => downloadJson(exportData, exportType === 'graph' ? 'ussd-graph.json' : 'ussd-flow.json')}
                   className="action-btn download-btn"
                 >
-                  💾 Download JSON
+                  💾 Download {exportType === 'graph' ? 'Graph' : 'Flow'} JSON
                 </button>
               </div>
               
@@ -147,29 +221,55 @@ const FlowControls = ({ nodes, edges, onImport, onClear, onAutoLayout }) => {
         <div className="modal-overlay">
           <div className="modal-content large">
             <div className="modal-header">
-              <h3>Import Flow JSON</h3>
+              <h3>Import Graph JSON</h3>
               <button onClick={() => setShowImport(false)} className="close-btn">×</button>
             </div>
             
             <div className="modal-body">
               <div className="import-instructions">
-                <p>Paste your flow JSON data below:</p>
+                <p><strong>Import your saved graph to restore the complete UI state:</strong></p>
+                <ul>
+                  <li>🎨 <strong>Graph JSON:</strong> Complete graph with positions (recommended - from "Export Graph")</li>
+                  <li>📤 <strong>Flow JSON:</strong> Simplified flow data (will auto-generate positions)</li>
+                </ul>
               </div>
               
-              <textarea
-                value={importData}
-                onChange={(e) => setImportData(e.target.value)}
-                placeholder="Paste JSON data here..."
-                className="import-textarea"
-                rows={15}
-              />
+              <div className="import-methods">
+                <div className="import-method">
+                  <h4>📁 Import from File</h4>
+                  <p>Upload a JSON file from your computer</p>
+                  <button onClick={handleFileImport} className="file-import-btn">
+                    📂 Choose JSON File
+                  </button>
+                </div>
+                
+                <div className="import-divider">
+                  <span>OR</span>
+                </div>
+                
+                <div className="import-method">
+                  <h4>📋 Paste JSON Data</h4>
+                  <p>Copy and paste JSON data directly</p>
+                  <textarea
+                    value={importData}
+                    onChange={(e) => setImportData(e.target.value)}
+                    placeholder="Paste JSON data here..."
+                    className="import-textarea"
+                    rows={12}
+                  />
+                </div>
+              </div>
               
               <div className="modal-actions">
                 <button onClick={() => setShowImport(false)} className="cancel-btn">
                   Cancel
                 </button>
-                <button onClick={handleImport} className="import-btn">
-                  Import Flow
+                <button 
+                  onClick={handleImport} 
+                  className="import-btn"
+                  disabled={!importData.trim()}
+                >
+                  Import Graph
                 </button>
               </div>
             </div>
