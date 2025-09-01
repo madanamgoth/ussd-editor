@@ -14,6 +14,7 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import { nodeTypes } from './components/NodeTypes';
+import CustomEdge from './components/CustomEdge';
 import NodePalette from './components/NodePalette';
 import FlowControls from './components/FlowControls';
 import NodeConfigPanel from './components/NodeConfigPanel';
@@ -29,6 +30,11 @@ import './styles/editor.css';
 let id = 0;
 const getId = () => `dndnode_${id++}`;
 
+// Define edge types
+const edgeTypes = {
+  custom: CustomEdge,
+};
+
 const DnDFlow = () => {
   const reactFlowWrapper = useRef(null);
   
@@ -38,9 +44,21 @@ const DnDFlow = () => {
     if (savedData) {
       try {
         const { nodes: savedNodes, edges: savedEdges } = JSON.parse(savedData);
+        
+        // Migrate existing edges to new label positioning
+        const migratedEdges = (savedEdges || []).map(edge => ({
+          ...edge,
+          labelPosition: 0.8,
+          labelShowBg: true,
+          labelBgPadding: [4, 8],
+          labelBgBorderRadius: 4,
+        }));
+        
+        console.log('🔄 Migrated edges with new label positioning:', migratedEdges);
+        
         return {
           nodes: savedNodes || [],
-          edges: savedEdges || []
+          edges: migratedEdges
         };
       } catch (error) {
         console.error('Error loading saved data:', error);
@@ -51,11 +69,36 @@ const DnDFlow = () => {
 
   const { nodes: initialNodes, edges: initialEdges } = initializeFromStorage();
   
+  // Update existing edges to use new label positioning
+  const updateEdgesLabelPosition = (edges) => {
+    return edges.map(edge => ({
+      ...edge,
+      labelPosition: 0.8,
+      labelShowBg: true,
+      labelBgPadding: [4, 8],
+      labelBgBorderRadius: 4,
+    }));
+  };
+  
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(updateEdgesLabelPosition(initialEdges));
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [selectedNode, setSelectedNode] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  
+  // One-time effect to update all existing edges with new label positioning
+  useEffect(() => {
+    console.log('🔄 Updating existing edges with new label positioning...');
+    setEdges(currentEdges => 
+      currentEdges.map(edge => ({
+        ...edge,
+        labelPosition: 0.8,
+        labelShowBg: true,
+        labelBgPadding: [4, 8],
+        labelBgBorderRadius: 4,
+      }))
+    );
+  }, []); // Run only once on mount
   const { screenToFlowPosition } = useReactFlow();
 
   // Handle edge deletion
@@ -473,6 +516,7 @@ const DnDFlow = () => {
             onEdgeClick={onEdgeClick}
             onPaneClick={onPaneClick}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             defaultEdgeOptions={defaultEdgeOptions}
             fitView
             deleteKeyCode={['Backspace', 'Delete']}

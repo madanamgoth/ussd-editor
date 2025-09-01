@@ -52,6 +52,34 @@
   color: #374151;
 }
 
+/* Custom Edge Animations */
+@keyframes flow {
+  0% {
+    stroke-dashoffset: 10;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.react-flow__edge-path {
+  transition: stroke-width 0.2s ease;
+}
+
+.react-flow__edge-path:hover {
+  stroke-width: 4px !important;
+}
+
+/* Edge label animations */
+.react-flow__edge-text {
+  pointer-events: all;
+  transition: all 0.2s ease;
+}
+
+.react-flow__edge-text:hover {
+  transform: scale(1.1);
+}
+
 /* Sidebar Toggle Button */
 .sidebar-toggle-btn {
   position: fixed;

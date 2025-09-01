@@ -140,14 +140,18 @@ export const createEdge = (source, target, sourceHandle = null, animated = true,
     edgeLabel = '➡️ Next';
   }
 
-  return {
+  const edgeConfig = {
     id: edgeId,
     source,
     target,
     sourceHandle,
-    type: 'smoothstep',
+    type: 'smoothstep', // Use smoothstep with custom label positioning
     animated,
     label: edgeLabel,
+    labelPosition: 0.8, // Position label at 80% of the edge length
+    labelShowBg: true,
+    labelBgPadding: [4, 8],
+    labelBgBorderRadius: 4,
     labelStyle: {
       fill: color,
       fontWeight: 600,
@@ -159,8 +163,6 @@ export const createEdge = (source, target, sourceHandle = null, animated = true,
       stroke: color,
       strokeWidth: 1,
     },
-    labelBgPadding: [4, 8],
-    labelBgBorderRadius: 4,
     markerEnd: {
       type: MarkerType.ArrowClosed,
       width: 20,
@@ -178,10 +180,32 @@ export const createEdge = (source, target, sourceHandle = null, animated = true,
     selectable: true,
     deletable: true
   };
+  
+  console.log('🔗 Creating edge with label positioning:', edgeConfig);
+  return edgeConfig;
 };
 
 export const exportToFlowFormat = (nodes, edges) => {
-  return nodes.map(node => {
+  // Sort nodes to put START nodes first, then others in logical order
+  const sortedNodes = [...nodes].sort((a, b) => {
+    const typeOrder = {
+      'start': 0,
+      'menu': 1,
+      'input': 2,
+      'action': 3,
+      'end': 4
+    };
+    
+    const aType = a.data.type?.toLowerCase() || 'unknown';
+    const bType = b.data.type?.toLowerCase() || 'unknown';
+    
+    const aOrder = typeOrder[aType] ?? 5;
+    const bOrder = typeOrder[bType] ?? 5;
+    
+    return aOrder - bOrder;
+  });
+  
+  return sortedNodes.map(node => {
     const nodeType = node.data.type;
     const config = node.data.config;
     
