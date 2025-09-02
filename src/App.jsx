@@ -18,12 +18,15 @@ import CustomEdge from './components/CustomEdge';
 import NodePalette from './components/NodePalette';
 import FlowControls from './components/FlowControls';
 import NodeConfigPanel from './components/NodeConfigPanel';
+import K6TestGenerator from './components/K6TestGenerator';
+import './components/K6TestGenerator.css';
 import { 
   createNodeData, 
   createEdge, 
   importFromFlowFormat, 
   generateEdgesFromNodes,
-  autoLayout
+  autoLayout,
+  exportToFlowFormat
 } from './utils/flowUtils';
 import './styles/editor.css';
 
@@ -85,6 +88,7 @@ const DnDFlow = () => {
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [selectedNode, setSelectedNode] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [showK6Generator, setShowK6Generator] = useState(false);
   
   // One-time effect to update all existing edges with new label positioning
   useEffect(() => {
@@ -492,6 +496,7 @@ const DnDFlow = () => {
             onImport={handleImport}
             onClear={handleClear}
             onAutoLayout={handleAutoLayout}
+            onK6Generate={() => setShowK6Generator(true)}
           />
         </div>
       )}
@@ -542,6 +547,15 @@ const DnDFlow = () => {
             allNodes={nodes}
           />
         </div>
+      )}
+      
+      {/* K6 Test Generator Modal */}
+      {showK6Generator && (
+        <K6TestGenerator
+          nodes={nodes}
+          edges={edges}
+          onClose={() => setShowK6Generator(false)}
+        />
       )}
     </div>
   );

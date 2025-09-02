@@ -1,0 +1,21 @@
+{
+  "name": "ussd-load-testing",
+  "version": "1.0.0",
+  "description": "Load testing scripts for USSD flows",
+  "main": "custom-load-test.js",
+  "scripts": {
+    "test": "node custom-load-test.js",
+    "test:artillery": "artillery run artillery-config.yml",
+    "test:k6": "k6 run k6-ussd-test.js",
+    "install-tools": "npm install -g artillery k6"
+  },
+  "dependencies": {
+    "axios": "^1.4.0"
+  },
+  "devDependencies": {
+    "artillery": "^2.0.0"
+  },
+  "keywords": ["ussd", "load-testing", "performance", "jmeter", "artillery", "k6"],
+  "author": "USSD Editor",
+  "license": "MIT"
+}

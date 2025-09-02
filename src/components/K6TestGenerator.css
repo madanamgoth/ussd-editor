@@ -1,0 +1,372 @@
+/* K6 Test Generator Modal Styles */
+.k6-generator-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.k6-generator-modal .modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+}
+
+.k6-generator-modal .modal-content {
+  position: relative;
+  background: white;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 800px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.k6-generator-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px;
+  border-bottom: 1px solid #e5e7eb;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 12px 12px 0 0;
+}
+
+.k6-generator-modal .modal-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.k6-generator-modal .close-btn {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.k6-generator-modal .close-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.k6-generator-modal .modal-body {
+  padding: 24px;
+}
+
+.k6-generator-modal .config-section {
+  margin-bottom: 32px;
+}
+
+.k6-generator-modal .config-section h3 {
+  margin: 0 0 16px 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #374151;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.k6-generator-modal .config-section h3:before {
+  content: '';
+  width: 4px;
+  height: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 2px;
+}
+
+.k6-generator-modal .config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px;
+}
+
+.k6-generator-modal .config-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.k6-generator-modal .config-item label {
+  font-weight: 500;
+  color: #374151;
+  font-size: 0.875rem;
+}
+
+.k6-generator-modal .config-item input {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.k6-generator-modal .config-item input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.k6-generator-modal .config-item select {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  background-color: white;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.k6-generator-modal .config-item select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.k6-generator-modal .config-item input[type="checkbox"] {
+  width: auto;
+  margin-right: 8px;
+  transform: scale(1.1);
+}
+
+.k6-generator-modal .dynamic-inputs-config {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  background-color: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.k6-generator-modal .config-item small {
+  display: block;
+  color: #6b7280;
+  font-size: 0.75rem;
+  margin-top: 4px;
+  font-style: italic;
+}
+
+.k6-generator-modal .config-item label {
+  font-weight: 500;
+  color: #374151;
+  font-size: 0.875rem;
+  margin-bottom: 6px;
+}
+
+.k6-generator-modal .profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.k6-generator-modal .profile-card {
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: white;
+}
+
+.k6-generator-modal .profile-card:hover {
+  border-color: #667eea;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.k6-generator-modal .profile-card.selected {
+  border-color: #667eea;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.k6-generator-modal .profile-card h4 {
+  margin: 0 0 8px 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.k6-generator-modal .profile-card p {
+  margin: 0 0 12px 0;
+  font-size: 0.875rem;
+  opacity: 0.9;
+}
+
+.k6-generator-modal .profile-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.k6-generator-modal .profile-card.selected .profile-stats {
+  opacity: 0.9;
+}
+
+.k6-generator-modal .flow-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.k6-generator-modal .stat-item {
+  background: #f9fafb;
+  padding: 16px;
+  border-radius: 8px;
+  text-align: center;
+  border: 1px solid #e5e7eb;
+}
+
+.k6-generator-modal .stat-label {
+  display: block;
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.k6-generator-modal .stat-value {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #374151;
+}
+
+.k6-generator-modal .modal-footer {
+  padding: 24px;
+  border-top: 1px solid #e5e7eb;
+  background: #f9fafb;
+  border-radius: 0 0 12px 12px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.k6-generator-modal .generate-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 1rem;
+}
+
+.k6-generator-modal .generate-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.k6-generator-modal .generate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.k6-generator-modal .script-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.k6-generator-modal .download-btn,
+.k6-generator-modal .copy-btn {
+  background: white;
+  border: 1px solid #d1d5db;
+  color: #374151;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.875rem;
+}
+
+.k6-generator-modal .download-btn:hover,
+.k6-generator-modal .copy-btn:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.k6-generator-modal .script-preview {
+  margin-top: 24px;
+  padding: 24px;
+  background: #f9fafb;
+  border-top: 1px solid #e5e7eb;
+}
+
+.k6-generator-modal .script-preview h3 {
+  margin: 0 0 16px 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.k6-generator-modal .script-content {
+  background: #1f2937;
+  color: #f9fafb;
+  padding: 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.k6-generator-modal .script-info {
+  margin: 12px 0 0 0;
+  font-size: 0.875rem;
+  color: #6b7280;
+  text-align: center;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .k6-generator-modal .modal-content {
+    width: 95%;
+    margin: 20px;
+  }
+  
+  .k6-generator-modal .config-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .k6-generator-modal .profile-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .k6-generator-modal .flow-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .k6-generator-modal .modal-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .k6-generator-modal .script-actions {
+    margin-left: 0;
+    justify-content: center;
+  }
+}

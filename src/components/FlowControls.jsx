@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { exportToFlowFormat, validateFlow, importFromFlowFormat, generateEdgesFromNodes } from '../utils/flowUtils';
 import AIFlowGenerator from './AIFlowGenerator';
 
-const FlowControls = ({ nodes, edges, onImport, onClear, onAutoLayout }) => {
+const FlowControls = ({ nodes, edges, onImport, onClear, onAutoLayout, onK6Generate }) => {
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showValidation, setShowValidation] = useState(false);
@@ -184,6 +184,10 @@ const FlowControls = ({ nodes, edges, onImport, onClear, onAutoLayout }) => {
         
         <button onClick={() => handleExport('graph')} className="control-btn export-btn graph-export">
           🎨 Export Graph
+        </button>
+        
+        <button onClick={onK6Generate} className="control-btn k6-btn">
+          🚀 Generate K6 Test
         </button>
         
         <button onClick={() => setShowImport(true)} className="control-btn import-btn">

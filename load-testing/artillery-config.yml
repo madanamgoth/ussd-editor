@@ -1,0 +1,190 @@
+config:
+  target: 'http://localhost:8080'
+  phases:
+    # Warm-up phase
+    - duration: 30
+      arrivalRate: 5
+      name: "Warm up"
+    # Load test phase
+    - duration: 120
+      arrivalRate: 20
+      name: "Sustained load"
+    # Spike test phase  
+    - duration: 60
+      arrivalRate: 50
+      name: "Spike test"
+    # Cool down
+    - duration: 30
+      arrivalRate: 5
+      name: "Cool down"
+  
+  # Global configuration
+  defaults:
+    headers:
+      Content-Type: 'application/json'
+  
+  # Variables for test data
+  variables:
+    ussd_codes:
+      - "*123#"
+      - "*456#" 
+      - "*789#"
+    phone_prefixes:
+      - "254700"
+      - "254701"
+      - "254702"
+      - "254703"
+      - "254704"
+
+  # Plugins for enhanced reporting
+  plugins:
+    expect: {}
+    metrics-by-endpoint:
+      useOnlyRequestNames: true
+
+scenarios:
+  # Complete USSD flow test
+  - name: "Complete USSD Flow"
+    weight: 70
+    flow:
+      - function: "generatePhoneNumber"
+      - function: "generateSessionId"
+      
+      # Step 1: Initiate USSD session
+      - post:
+          url: "/ussd/session/start"
+          json:
+            sessionId: "{{ sessionId }}"
+            phoneNumber: "{{ phoneNumber }}"
+            ussdCode: "{{ $randomString.ussd_codes }}"
+            text: ""
+          capture:
+            - json: "$.message"
+              as: "menuText"
+            - json: "$.sessionState"
+              as: "sessionState"
+          expect:
+            - statusCode: 200
+            - hasProperty: "message"
+      
+      # Think time
+      - think: 1
+      
+      # Step 2: Select menu option 1 (Balance inquiry)
+      - post:
+          url: "/ussd/session/continue"
+          json:
+            sessionId: "{{ sessionId }}"
+            phoneNumber: "{{ phoneNumber }}"
+            text: "1"
+          capture:
+            - json: "$.message"
+              as: "balanceText"
+          expect:
+            - statusCode: 200
+      
+      # Think time
+      - think: 2
+      
+      # Step 3: End session
+      - post:
+          url: "/ussd/session/end"
+          json:
+            sessionId: "{{ sessionId }}"
+            phoneNumber: "{{ phoneNumber }}"
+            text: "0"
+          expect:
+            - statusCode: 200
+
+  # Menu navigation test
+  - name: "Menu Navigation Test"
+    weight: 20
+    flow:
+      - function: "generatePhoneNumber" 
+      - function: "generateSessionId"
+      
+      # Start session
+      - post:
+          url: "/ussd/session/start"
+          json:
+            sessionId: "{{ sessionId }}"
+            phoneNumber: "{{ phoneNumber }}"
+            ussdCode: "{{ $randomString.ussd_codes }}"
+            text: ""
+          expect:
+            - statusCode: 200
+      
+      # Navigate through multiple menu options
+      - loop:
+          - post:
+              url: "/ussd/session/continue"
+              json:
+                sessionId: "{{ sessionId }}"
+                phoneNumber: "{{ phoneNumber }}"
+                text: "{{ $randomInt(1, 3) }}"
+              expect:
+                - statusCode: 200
+          - think: 1
+        count: 3
+      
+      # End session
+      - post:
+          url: "/ussd/session/end" 
+          json:
+            sessionId: "{{ sessionId }}"
+            phoneNumber: "{{ phoneNumber }}"
+            text: "0"
+
+  # Error scenario test
+  - name: "Error Scenarios"
+    weight: 10
+    flow:
+      - function: "generatePhoneNumber"
+      - function: "generateSessionId"
+      
+      # Start session
+      - post:
+          url: "/ussd/session/start"
+          json:
+            sessionId: "{{ sessionId }}"
+            phoneNumber: "{{ phoneNumber }}"
+            ussdCode: "{{ $randomString.ussd_codes }}"
+            text: ""
+          expect:
+            - statusCode: 200
+      
+      # Send invalid menu option
+      - post:
+          url: "/ussd/session/continue"
+          json:
+            sessionId: "{{ sessionId }}"
+            phoneNumber: "{{ phoneNumber }}"
+            text: "99"  # Invalid option
+          expect:
+            - statusCode: [200, 400] # Accept both success and error responses
+      
+      # Try to continue invalid session
+      - post:
+          url: "/ussd/session/continue"
+          json:
+            sessionId: "invalid-session-id"
+            phoneNumber: "{{ phoneNumber }}"
+            text: "1"
+          expect:
+            - statusCode: [400, 404] # Should return error
+
+# Custom functions for test data generation
+processor:
+  generatePhoneNumber: |
+    function(requestParams, context, next) {
+      const prefix = context.vars.$randomString.phone_prefixes;
+      const suffix = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+      context.vars.phoneNumber = prefix + suffix;
+      return next();
+    }
+  
+  generateSessionId: |
+    function(requestParams, context, next) {
+      context.vars.sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      return next();
+    }
