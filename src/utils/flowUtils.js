@@ -205,12 +205,29 @@ export const exportToFlowFormat = (nodes, edges) => {
     return aOrder - bOrder;
   });
   
+  // Create a map for quick node lookup
+  const nodeMap = new Map(nodes.map(node => [node.id, node]));
+  
+  // Helper function to get next node metadata
+  const getNextNodeMetadata = (currentNodeId, targetNodeId) => {
+    const targetNode = nodeMap.get(targetNodeId);
+    if (!targetNode) return null;
+    
+    return {
+      nextNodeType: targetNode.data.type,
+      nextNodePrompts: targetNode.data.config?.prompts || {},
+      nextNodeStoreAttribute: targetNode.data.config?.storeAttribute || null,
+      nextNodeTemplateId: targetNode.data.config?.templateId || null
+    };
+  };
+  
   return sortedNodes.map(node => {
     const nodeType = node.data.type;
     const config = node.data.config;
     
     // Build transitions from both config.transitions AND actual visual edges
     let cleanTransitions = {};
+    let nextNodeMetadata = {}; // Store metadata for each transition
     
     // First, get transitions from visual edges (this captures the actual graph connections)
     if (edges) {
@@ -218,10 +235,14 @@ export const exportToFlowFormat = (nodes, edges) => {
       nodeEdges.forEach(edge => {
         if (edge.target && edge.target.trim() !== '') {
           const sourceHandle = edge.sourceHandle || '';
+          const metadata = getNextNodeMetadata(node.id, edge.target);
           
           if (nodeType === 'INPUT') {
             // For INPUT nodes, use '*' for any connection
             cleanTransitions['*'] = edge.target;
+            if (metadata) {
+              nextNodeMetadata['*'] = metadata;
+            }
           } else if (nodeType === 'ACTION') {
             // For ACTION nodes, clean up transaction codes
             let cleanKey = sourceHandle;
@@ -230,21 +251,45 @@ export const exportToFlowFormat = (nodes, edges) => {
             }
             if (['200', '400', '500', 'onSuccess', 'onError', 'onBadRequest'].includes(cleanKey)) {
               cleanTransitions[cleanKey] = edge.target;
+              if (metadata) {
+                nextNodeMetadata[cleanKey] = metadata;
+              }
             }
           } else if (nodeType === 'MENU') {
             // For MENU nodes, clean up option handles
             if (sourceHandle.startsWith('option-')) {
               const optionNumber = sourceHandle.replace('option-', '');
               cleanTransitions[optionNumber] = edge.target;
+              if (metadata) {
+                nextNodeMetadata[optionNumber] = metadata;
+              }
             } else if (sourceHandle === 'fallback') {
               cleanTransitions['fallback'] = edge.target;
+              if (metadata) {
+                nextNodeMetadata['fallback'] = metadata;
+              }
             } else if (sourceHandle === '*') {
               cleanTransitions['*'] = edge.target;
+              if (metadata) {
+                nextNodeMetadata['*'] = metadata;
+              }
             }
           } else if (nodeType === 'START') {
-            // For START nodes, use the handle as-is or empty string
-            const key = sourceHandle || '';
-            cleanTransitions[key] = edge.target;
+            // For START nodes, use configured USSD code or skip if empty
+            let key = sourceHandle || '';
+            
+            // If node has configured USSD code, use it as the key
+            if (node.data.config?.ussdCode && node.data.config.ussdCode.trim() !== '') {
+              key = node.data.config.ussdCode.trim();
+            }
+            
+            // Only add transition if key is not empty
+            if (key && key.trim() !== '') {
+              cleanTransitions[key] = edge.target;
+              if (metadata) {
+                nextNodeMetadata[key] = metadata;
+              }
+            }
           }
         }
       });
@@ -267,9 +312,14 @@ export const exportToFlowFormat = (nodes, edges) => {
             if (['200', '400', '500', 'onSuccess', 'onError', 'onBadRequest'].includes(cleanKey)) {
               cleanTransitions[cleanKey] = value;
             }
+          } else if (nodeType === 'INPUT') {
+            // For INPUT nodes, only allow '*' and other non-empty meaningful keys
+            if (key === '*' || (key && key.trim() !== '' && key !== '')) {
+              cleanTransitions[key] = value;
+            }
           } else {
-            // For other node types, use as-is if not already set by edges
-            if (!cleanTransitions[key]) {
+            // For other node types, use as-is if not already set by edges and key is not empty
+            if (!cleanTransitions[key] && key && key.trim() !== '') {
               cleanTransitions[key] = value;
             }
           }
@@ -277,13 +327,39 @@ export const exportToFlowFormat = (nodes, edges) => {
       });
     }
 
-    // Build the clean node object
+    // Build the clean node object with next node metadata only
     const cleanNode = {
       id: node.id,
       type: nodeType,
-      prompts: config.prompts || {},
       transitions: cleanTransitions
     };
+
+    // Add next node metadata for NiFi optimization
+    // For nodes with single transition (like START, INPUT), use the primary next node's prompts
+    const transitionKeys = Object.keys(cleanTransitions);
+    if (transitionKeys.length === 1) {
+      // Single transition - use next node's prompts as primary prompts
+      const primaryKey = transitionKeys[0];
+      const metadata = nextNodeMetadata[primaryKey];
+      if (metadata) {
+        cleanNode.nextNodeType = metadata.nextNodeType;
+        cleanNode.nextNodePrompts = metadata.nextNodePrompts;
+        if (metadata.nextNodeStoreAttribute) {
+          cleanNode.nextNodeStoreAttribute = metadata.nextNodeStoreAttribute;
+        }
+        if (metadata.nextNodeTemplateId) {
+          cleanNode.nextNodeTemplateId = metadata.nextNodeTemplateId;
+        }
+      }
+    } else if (transitionKeys.length > 1) {
+      // Multiple transitions - include metadata for each transition
+      cleanNode.nextNodesMetadata = {};
+      transitionKeys.forEach(key => {
+        if (nextNodeMetadata[key]) {
+          cleanNode.nextNodesMetadata[key] = nextNodeMetadata[key];
+        }
+      });
+    }
 
     // Add optional fields only if they have meaningful values
     if (config.storeAttribute && config.storeAttribute.trim() !== '') {

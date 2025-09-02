@@ -64,7 +64,8 @@ const NodeConfigPanel = ({ selectedNode, onUpdateNode, onClose, allNodes = [] })
         menuConnections: menuConnections,
         fallback: selectedNode.data.config?.fallback || '',
         templates: selectedNode.data.config?.templates || [],
-        transactionCodes: selectedNode.data.config?.transactionCodes || ['200', '400', '500']
+        transactionCodes: selectedNode.data.config?.transactionCodes || ['200', '400', '500'],
+        ussdCode: selectedNode.data.config?.ussdCode || ''
       });
     }
   }, [selectedNode]);
@@ -87,6 +88,8 @@ const NodeConfigPanel = ({ selectedNode, onUpdateNode, onClose, allNodes = [] })
       } else if (selectedNode.data.type === 'ACTION') {
         updatedConfig.templates = config.templates;
         updatedConfig.transactionCodes = config.transactionCodes;
+      } else if (selectedNode.data.type === 'START') {
+        updatedConfig.ussdCode = config.ussdCode;
       }
 
       onUpdateNode(selectedNode.id, {
@@ -340,6 +343,25 @@ const NodeConfigPanel = ({ selectedNode, onUpdateNode, onClose, allNodes = [] })
                 </button>
               </div>
             </div>
+          </>
+        )}
+
+        {selectedNode.data.type === 'START' && (
+          <>
+            <div className="config-section">
+              <label>USSD Code / Trigger:</label>
+              <input
+                type="text"
+                value={config.ussdCode || ''}
+                onChange={(e) => setConfig(prev => ({ ...prev, ussdCode: e.target.value }))}
+                placeholder="e.g., *123# or leave empty for default"
+              />
+              <small className="config-hint">
+                This USSD code will be used as the transition key. Leave empty for default behavior.
+              </small>
+            </div>
+            
+
           </>
         )}
 
