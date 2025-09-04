@@ -1,0 +1,256 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "🚦 Test Overview",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 24, "x": 0, "y": 0},
+      "targets": [
+        {
+          "measurement": "flow_completion",
+          "select": [
+            [{"type": "field", "params": ["value"]}, {"type": "mean"}]
+          ],
+          "groupBy": [{"type": "time", "params": ["$__interval"]}, {"type": "fill", "params": ["null"]}]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "steps": [
+              {"color": "red", "value": 0},
+              {"color": "yellow", "value": 0.8},
+              {"color": "green", "value": 0.95}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "📊 Virtual Users",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "targets": [
+        {
+          "measurement": "vus",
+          "select": [
+            [{"type": "field", "params": ["value"]}, {"type": "mean"}]
+          ],
+          "groupBy": [{"type": "time", "params": ["$__interval"]}, {"type": "fill", "params": ["null"]}]
+        },
+        {
+          "measurement": "vus_max",
+          "select": [
+            [{"type": "field", "params": ["value"]}, {"type": "mean"}]
+          ],
+          "groupBy": [{"type": "time", "params": ["$__interval"]}, {"type": "fill", "params": ["null"]}]
+        }
+      ]
+    },
+    {
+      "title": "⚡ Transactions Per Second",
+      "type": "timeseries", 
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "targets": [
+        {
+          "measurement": "http_reqs",
+          "select": [
+            [{"type": "field", "params": ["count"]}, {"type": "derivative", "params": ["1s"]}]
+          ],
+          "groupBy": [{"type": "time", "params": ["$__interval"]}, {"type": "fill", "params": ["null"]}]
+        }
+      ]
+    },
+    {
+      "title": "🕐 Response Time Percentiles",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
+      "targets": [
+        {
+          "measurement": "http_req_duration",
+          "select": [
+            [{"type": "field", "params": ["value"]}, {"type": "percentile", "params": ["50"]}]
+          ],
+          "alias": "p50"
+        },
+        {
+          "measurement": "http_req_duration", 
+          "select": [
+            [{"type": "field", "params": ["value"]}, {"type": "percentile", "params": ["90"]}]
+          ],
+          "alias": "p90"
+        },
+        {
+          "measurement": "http_req_duration",
+          "select": [
+            [{"type": "field", "params": ["value"]}, {"type": "percentile", "params": ["95"]}]
+          ],
+          "alias": "p95"
+        },
+        {
+          "measurement": "http_req_duration",
+          "select": [
+            [{"type": "field", "params": ["value"]}, {"type": "percentile", "params": ["99"]}]
+          ],
+          "alias": "p99"
+        }
+      ]
+    },
+    {
+      "title": "❌ Error Rate by Step Type",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+      "targets": [
+        {
+          "measurement": "step_error_rate",
+          "select": [
+            [{"type": "field", "params": ["value"]}, {"type": "mean"}]
+          ],
+          "groupBy": [
+            {"type": "time", "params": ["$__interval"]},
+            {"type": "tag", "params": ["step_type"]},
+            {"type": "fill", "params": ["null"]}
+          ]
+        }
+      ]
+    },
+    {
+      "title": "✅ Flow Completion by Scenario",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+      "targets": [
+        {
+          "measurement": "flow_completion",
+          "select": [
+            [{"type": "field", "params": ["value"]}, {"type": "mean"}]
+          ],
+          "groupBy": [
+            {"type": "time", "params": ["$__interval"]},
+            {"type": "tag", "params": ["scenario_name"]},
+            {"type": "fill", "params": ["null"]}
+          ]
+        }
+      ]
+    },
+    {
+      "title": "💰 Business Metrics",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 28},
+      "targets": [
+        {
+          "measurement": "successful_transactions",
+          "select": [
+            [{"type": "field", "params": ["value"]}, {"type": "sum"}]
+          ],
+          "alias": "Successful Transactions"
+        },
+        {
+          "measurement": "failed_transactions",
+          "select": [
+            [{"type": "field", "params": ["value"]}, {"type": "sum"}]
+          ],
+          "alias": "Failed Transactions"
+        }
+      ]
+    },
+    {
+      "title": "📈 Average Session Value",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 28},
+      "targets": [
+        {
+          "measurement": "average_session_value",
+          "select": [
+            [{"type": "field", "params": ["value"]}, {"type": "mean"}]
+          ],
+          "groupBy": [{"type": "time", "params": ["$__interval"]}, {"type": "fill", "params": ["null"]}]
+        }
+      ]
+    },
+    {
+      "title": "🔍 Step Performance Heatmap",
+      "type": "heatmap",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 36},
+      "targets": [
+        {
+          "measurement": "step_response_time",
+          "select": [
+            [{"type": "field", "params": ["value"]}, {"type": "percentile", "params": ["95"]}]
+          ],
+          "groupBy": [
+            {"type": "time", "params": ["$__interval"]},
+            {"type": "tag", "params": ["step"]},
+            {"type": "fill", "params": ["null"]}
+          ]
+        }
+      ]
+    },
+    {
+      "title": "📊 Detailed Error Analysis",
+      "type": "table",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 44},
+      "targets": [
+        {
+          "measurement": "step_error_rate",
+          "select": [
+            [{"type": "field", "params": ["value"]}, {"type": "sum"}]
+          ],
+          "groupBy": [
+            {"type": "tag", "params": ["scenario_name"]},
+            {"type": "tag", "params": ["step_type"]},
+            {"type": "tag", "params": ["store_attribute"]}
+          ]
+        }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 27,
+  "style": "dark",
+  "tags": ["k6", "ussd", "load-testing"],
+  "templating": {
+    "list": [
+      {
+        "name": "scenario",
+        "query": "SHOW TAG VALUES FROM \"flow_completion\" WITH KEY = \"scenario_name\"",
+        "refresh": 1,
+        "type": "query"
+      },
+      {
+        "name": "step_type",
+        "query": "SHOW TAG VALUES FROM \"step_error_rate\" WITH KEY = \"step_type\"",
+        "refresh": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "🚀 Enhanced USSD K6 Load Testing Dashboard",
+  "uid": "ussd-k6-enhanced",
+  "version": 1
+}

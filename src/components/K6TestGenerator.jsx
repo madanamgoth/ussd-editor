@@ -740,6 +740,31 @@ import { Rate, Trend } from 'k6/metrics';
 const errorRate = new Rate('errors');
 const sessionDuration = new Trend('session_duration');
 const flowCompletionRate = new Rate('flow_completion');
+const stepFailureRate = new Rate('step_failures');
+const actionNodeDuration = new Trend('action_node_duration');
+const inputValidationRate = new Rate('input_validation_success');
+const responseContentRate = new Rate('response_content_match');
+
+// Per-step metrics for detailed analysis
+const stepResponseTime = new Trend('step_response_time');
+const stepErrorRate = new Rate('step_error_rate');
+const stepSuccessRate = new Rate('step_success_rate');
+
+// Flow-specific metrics
+const flowTypeMetrics = {
+  pin_flow: new Rate('pin_flow_success'),
+  amount_flow: new Rate('amount_flow_success'),
+  transfer_flow: new Rate('transfer_flow_success'),
+  balance_flow: new Rate('balance_flow_success')
+};
+
+// Business metrics
+const businessMetrics = {
+  successful_transactions: new Rate('successful_transactions'),
+  failed_transactions: new Rate('failed_transactions'),
+  user_abandonment: new Rate('user_abandonment'),
+  average_session_value: new Trend('average_session_value')
+};
 
 // Test configuration
 export const options = {
@@ -750,7 +775,23 @@ export const options = {
     http_req_failed: ['rate<0.1'],
     errors: ['rate<0.05'],
     flow_completion: ['rate>0.9'],
+    step_failures: ['rate<0.05'],
+    input_validation_success: ['rate>0.95'],
+    response_content_match: ['rate>0.95'],
+    successful_transactions: ['rate>0.9'],
+    user_abandonment: ['rate<0.1']
   },
+
+  // Enhanced monitoring configuration
+  setupTimeout: '60s',
+  teardownTimeout: '60s',
+  
+  // Tags for better filtering in Grafana
+  tags: {
+    testType: 'ussd_load_test',
+    environment: 'staging',
+    version: '${new Date().toISOString().split('T')[0]}'
+  }
 };
 
 // Configuration
@@ -931,26 +972,40 @@ function makeUSSDRequest(sessionId, msisdn, input, newRequest = 0) {
   return { response, duration };
 }
 
-function validateUSSDResponse(response, expectedResponse = null, nodeType = null, isActionNode = false) {
+function validateUSSDResponse(response, expectedResponse = null, nodeType = null, isActionNode = false, stepIndex = 0, scenarioName = '') {
+  const stepStart = Date.now();
+  
   const checks = {
     'status is 200': (r) => r.status === 200,
     'response has body': (r) => r.body && r.body.length > 0,
     'response time < 3000ms': (r) => r.timings.duration < 3000,
   };
   
+  // Add tags for detailed analysis
+  const tags = {
+    scenario: scenarioName,
+    step: stepIndex,
+    node_type: nodeType || 'unknown',
+    is_action_node: isActionNode
+  };
+  
   if (response.body) {
     // Validate no error indicators
-    checks['no error indicators'] = (r) => {
-      const errorKeywords = ['error', 'invalid', 'failed', 'wrong', 'denied', 'unauthorized'];
-      return !errorKeywords.some(keyword => r.body.toLowerCase().includes(keyword));
-    };
+    const hasErrors = ['error', 'invalid', 'failed', 'wrong', 'denied', 'unauthorized'].some(keyword => 
+      response.body.toLowerCase().includes(keyword)
+    );
+    
+    checks['no error indicators'] = (r) => !hasErrors;
+    
+    // Track error indicators separately
+    errorRate.add(!hasErrors ? 0 : 1, tags);
     
     // For ACTION nodes, we don't validate content - just that we got a response
     if (isActionNode) {
       checks['action response received'] = (r) => {
-        // For ACTION nodes, any non-empty response is valid
-        // The real validation happens at the next node based on the action result
-        return r.body && r.body.length > 0;
+        const hasResponse = r.body && r.body.length > 0;
+        actionNodeDuration.add(Date.now() - stepStart, tags);
+        return hasResponse;
       };
     } else if (expectedResponse && expectedResponse.trim().length > 0) {
       // For non-ACTION nodes, validate against expected content
@@ -958,51 +1013,65 @@ function validateUSSDResponse(response, expectedResponse = null, nodeType = null
         const responseBody = r.body.trim();
         const expected = expectedResponse.trim();
         
+        let contentMatch = false;
+        
         // Try exact match first
         if (responseBody.includes(expected)) {
-          return true;
+          contentMatch = true;
         }
-        
         // Try case-insensitive match
-        if (responseBody.toLowerCase().includes(expected.toLowerCase())) {
-          return true;
+        else if (responseBody.toLowerCase().includes(expected.toLowerCase())) {
+          contentMatch = true;
         }
-        
         // For menu responses, check if response contains menu structure
-        if (expected.includes('\\n') && (expected.includes('1.') || expected.includes('2.'))) {
+        else if (expected.includes('\\n') && (expected.includes('1.') || expected.includes('2.'))) {
           const menuOptions = expected.split('\\n').filter(line => line.trim().match(/^\\d+\\./));
           const bodyLower = responseBody.toLowerCase();
           const foundOptions = menuOptions.filter(option => 
             bodyLower.includes(option.toLowerCase().substring(0, 10))
           );
-          return foundOptions.length >= Math.floor(menuOptions.length / 2); // At least half the menu options
+          contentMatch = foundOptions.length >= Math.floor(menuOptions.length / 2);
+        }
+        // Try partial match for key phrases
+        else {
+          const keyWords = expected.toLowerCase()
+            .replace(/[^\\w\\s]/g, ' ')
+            .split(/\\s+/)
+            .filter(word => word.length > 3)
+            .filter(word => !['please', 'enter', 'your', 'the', 'and', 'for', 'with', 'thank', 'using'].includes(word));
+            
+          if (keyWords.length > 0) {
+            const bodyLower = responseBody.toLowerCase();
+            const matchedWords = keyWords.filter(word => bodyLower.includes(word));
+            contentMatch = matchedWords.length >= Math.ceil(keyWords.length / 2);
+          }
         }
         
-        // Try partial match for key phrases (extract important words)
-        const keyWords = expected.toLowerCase()
-          .replace(/[^\\w\\s]/g, ' ')
-          .split(/\\s+/)
-          .filter(word => word.length > 3)
-          .filter(word => !['please', 'enter', 'your', 'the', 'and', 'for', 'with', 'thank', 'using'].includes(word));
-          
-        if (keyWords.length > 0) {
-          const bodyLower = responseBody.toLowerCase();
-          const matchedWords = keyWords.filter(word => bodyLower.includes(word));
-          return matchedWords.length >= Math.ceil(keyWords.length / 2); // At least half the key words
-        }
-        
-        return false;
+        // Track content match rate
+        responseContentRate.add(contentMatch ? 1 : 0, tags);
+        return contentMatch;
       };
     } else {
       // Fallback to generic validation if no specific expected response
       checks['contains valid content'] = (r) => {
         const validKeywords = ['menu', 'select', 'balance', 'account', 'thank', 'success', 'pin', 'amount', 'enter', 'please', 'service'];
-        return validKeywords.some(keyword => r.body.toLowerCase().includes(keyword));
+        const hasValidContent = validKeywords.some(keyword => r.body.toLowerCase().includes(keyword));
+        responseContentRate.add(hasValidContent ? 1 : 0, tags);
+        return hasValidContent;
       };
     }
   }
   
-  return check(response, checks);
+  // Record step metrics
+  stepResponseTime.add(response.timings.duration, tags);
+  
+  const result = check(response, checks, tags);
+  
+  // Track step success/failure
+  stepSuccessRate.add(result ? 1 : 0, tags);
+  stepErrorRate.add(result ? 0 : 1, tags);
+  
+  return result;
 }
 
 // Main test function
@@ -1017,6 +1086,16 @@ export default function () {
   
   const sessionStart = Date.now();
   let flowCompleted = false;
+  let transactionValue = 0;
+  let stepCount = 0;
+  
+  // Add session tags for tracking
+  const sessionTags = {
+    scenario_name: scenario.name,
+    phone_number: phoneNumber.substring(0, 3) + 'XXX', // Anonymized
+    session_type: scenario.name.includes('PIN') ? 'pin_flow' : 
+                  scenario.name.includes('AMOUNT') ? 'amount_flow' : 'other_flow'
+  };
   
   try {
     // Initiate USSD session with start node expected response
@@ -1037,8 +1116,9 @@ export default function () {
     console.log(\`🔍 Start validation (\${startNodeType}) - Expected: "\${startExpectedResponse}"\`);
     console.log(\`📝 Actual response: "\${startResponse.body ? startResponse.body.substring(0, 100) : 'No response'}"\`);
     
-    if (!validateUSSDResponse(startResponse, startExpectedResponse, startNodeType, isStartActionNode)) {
-      errorRate.add(1);
+    if (!validateUSSDResponse(startResponse, startExpectedResponse, startNodeType, isStartActionNode, 0, scenario.name)) {
+      errorRate.add(1, sessionTags);
+      stepFailureRate.add(1, { ...sessionTags, step: 0, step_type: 'START' });
       console.log(\`❌ Start node validation failed\`);
       return;
     }
@@ -1053,6 +1133,7 @@ export default function () {
     };
     
     for (let i = 0; i < scenario.inputs.length; i++) {
+      stepCount++;
       const originalInput = scenario.inputs[i];
       const inputMetadata = scenario.inputMetadata ? scenario.inputMetadata[i] : null;
       const storeAttribute = inputMetadata ? inputMetadata.storeAttribute : null;
@@ -1062,11 +1143,13 @@ export default function () {
       const currentNodeType = inputMetadata ? inputMetadata.nodeType : 'UNKNOWN';
       const nextNodeType = inputMetadata ? inputMetadata.nextNodeType : 'UNKNOWN';
       
-      // The expected response should now come correctly from the path generation
-      // where ACTION nodes are automatically resolved to their success targets
-      
       // Process dynamic inputs (* becomes realistic data based on storeAttribute)
       const processedInput = processFlowInput(originalInput, i, flowContext, DYNAMIC_CONFIG, storeAttribute);
+      
+      // Track transaction value for business metrics
+      if (storeAttribute === 'AMOUNT' && processedInput !== '*') {
+        transactionValue = parseInt(processedInput) || 0;
+      }
       
       // Update flow context based on the input we're about to send
       if (originalInput === '*') {
@@ -1083,9 +1166,14 @@ export default function () {
         } else {
           console.log(\`📝 Generated custom value from storeAttribute \${storeAttribute}: \${processedInput}\`);
         }
+        
+        // Track input validation success
+        inputValidationRate.add(1, { ...sessionTags, input_type: attrConfig?.type || 'unknown' });
       }
       
+      const stepStartTime = Date.now();
       const { response } = makeUSSDRequest(sessionId, phoneNumber, processedInput, 0);
+      const stepDuration = Date.now() - stepStartTime;
       
       console.log(\`🔍 Step \${i + 1} (\${currentNodeType} → \${nextNodeType}) validation - Expected: "\${stepExpectedResponse || 'No specific expectation'}"\`);
       console.log(\`📝 Actual response: "\${response.body ? response.body.substring(0, 100) : 'No response'}"\`);
@@ -1094,25 +1182,58 @@ export default function () {
         console.log(\`⚙️ Step includes ACTION processing (\${inputMetadata.actionNodeId}): Validating final response\`);
       }
       
+      // Enhanced step validation with detailed tracking
+      const stepTags = {
+        ...sessionTags,
+        step: i + 1,
+        step_type: currentNodeType,
+        next_step_type: nextNodeType,
+        store_attribute: storeAttribute || 'none',
+        has_action_node: !!(inputMetadata && inputMetadata.actionNodeId)
+      };
+      
       // Normal validation (ACTION nodes are now properly resolved in path generation)
-      if (!validateUSSDResponse(response, stepExpectedResponse, nextNodeType, false)) {
-        errorRate.add(1);
+      if (!validateUSSDResponse(response, stepExpectedResponse, nextNodeType, false, i + 1, scenario.name)) {
+        errorRate.add(1, stepTags);
+        stepFailureRate.add(1, stepTags);
         console.log(\`❌ Flow failed at step \${i + 1} (\${currentNodeType} → \${nextNodeType}) with input: \${processedInput}\`);
         console.log(\`❌ Expected: "\${stepExpectedResponse || 'No expectation'}"\`);
         console.log(\`❌ Got: "\${response.body ? response.body.substring(0, 200) : 'No response'}"\`);
+        
+        // Track abandonment
+        businessMetrics.user_abandonment.add(1, stepTags);
         break;
       }
       
       if (i === scenario.inputs.length - 1) {
         flowCompleted = true;
         console.log(\`✅ Flow completed for \${phoneNumber}\`);
+        
+        // Track successful transaction
+        if (transactionValue > 0) {
+          businessMetrics.successful_transactions.add(1, { ...sessionTags, transaction_value: transactionValue });
+          businessMetrics.average_session_value.add(transactionValue, sessionTags);
+        } else {
+          businessMetrics.successful_transactions.add(1, sessionTags);
+        }
+        
+        // Track flow type success
+        if (sessionTags.session_type === 'pin_flow') {
+          flowTypeMetrics.pin_flow.add(1, sessionTags);
+        } else if (sessionTags.session_type === 'amount_flow') {
+          flowTypeMetrics.amount_flow.add(1, sessionTags);
+        }
       }
       
       sleep(0.5 + Math.random() * 1.5);
     }
     
-    flowCompletionRate.add(flowCompleted ? 1 : 0);
-    sessionDuration.add(Date.now() - sessionStart);
+    if (!flowCompleted && stepCount > 0) {
+      businessMetrics.failed_transactions.add(1, { ...sessionTags, failure_step: stepCount });
+    }
+    
+    flowCompletionRate.add(flowCompleted ? 1 : 0, sessionTags);
+    sessionDuration.add(Date.now() - sessionStart, sessionTags);
     
     // Start new session after completion
     if (flowCompleted) {
@@ -1126,8 +1247,9 @@ export default function () {
     
   } catch (error) {
     console.error(\`Error in \${scenario.name}:\`, error.message);
-    errorRate.add(1);
-    flowCompletionRate.add(0);
+    errorRate.add(1, sessionTags);
+    flowCompletionRate.add(0, sessionTags);
+    businessMetrics.failed_transactions.add(1, { ...sessionTags, error_type: 'exception' });
   }
   
   sleep(2 + Math.random() * 3);
@@ -1870,6 +1992,95 @@ export function teardown(data) {
             <p className="script-info">
               Script generated successfully! Contains {generatedScript.split('\n').length} lines.
             </p>
+            
+            {/* InfluxDB + Grafana Command Instructions */}
+            <div className="influxdb-commands">
+              <h4>🚀 Run with InfluxDB + Grafana Real-time Monitoring:</h4>
+              
+              <div className="command-section">
+                <h5>📊 Basic InfluxDB Output:</h5>
+                <div className="command-box">
+                  <code>k6 run --out influxdb=http://localhost:8086/k6 your-script.js</code>
+                  <button 
+                    className="copy-command-btn"
+                    onClick={() => navigator.clipboard.writeText('k6 run --out influxdb=http://localhost:8086/k6 your-script.js')}
+                    title="Copy command"
+                  >
+                    📋
+                  </button>
+                </div>
+              </div>
+              
+              <div className="command-section">
+                <h5>🎯 Enhanced with Tags & Multiple Outputs:</h5>
+                <div className="command-box">
+                  <code>
+{`k6 run \\
+  --out influxdb=http://localhost:8086/k6 \\
+  --out json=results.json \\
+  --tag testid=ussd_test_$(date +%Y%m%d_%H%M%S) \\
+  --tag environment=staging \\
+  your-script.js`}
+                  </code>
+                  <button 
+                    className="copy-command-btn"
+                    onClick={() => navigator.clipboard.writeText(`k6 run \\
+  --out influxdb=http://localhost:8086/k6 \\
+  --out json=results.json \\
+  --tag testid=ussd_test_$(date +%Y%m%d_%H%M%S) \\
+  --tag environment=staging \\
+  your-script.js`)}
+                    title="Copy command"
+                  >
+                    📋
+                  </button>
+                </div>
+              </div>
+              
+              <div className="command-section">
+                <h5>🐳 Docker K6 with InfluxDB:</h5>
+                <div className="command-box">
+                  <code>
+{`docker run --rm -i grafana/k6:latest run \\
+  --out influxdb=http://host.docker.internal:8086/k6 \\
+  --tag testid=ussd_docker_test \\
+  - < your-script.js`}
+                  </code>
+                  <button 
+                    className="copy-command-btn"
+                    onClick={() => navigator.clipboard.writeText(`docker run --rm -i grafana/k6:latest run \\
+  --out influxdb=http://host.docker.internal:8086/k6 \\
+  --tag testid=ussd_docker_test \\
+  - < your-script.js`)}
+                    title="Copy command"
+                  >
+                    📋
+                  </button>
+                </div>
+              </div>
+              
+              <div className="setup-links">
+                <h5>📋 Setup Instructions:</h5>
+                <div className="link-buttons">
+                  <button 
+                    className="setup-link-btn"
+                    onClick={() => window.open('https://grafana.com/grafana/dashboards/2587', '_blank')}
+                  >
+                    📊 Import K6 Grafana Dashboard (ID: 2587)
+                  </button>
+                  <div className="setup-steps">
+                    <p><strong>Quick Setup:</strong></p>
+                    <ol>
+                      <li>Create InfluxDB database: <code>influx -execute "CREATE DATABASE k6"</code></li>
+                      <li>Add InfluxDB data source in Grafana: <code>http://localhost:8086</code>, database: <code>k6</code></li>
+                      <li>Import dashboard with ID: <strong>2587</strong></li>
+                      <li>Run K6 with the commands above</li>
+                      <li>Watch real-time metrics in Grafana! 🎉</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -2340,6 +2551,140 @@ styleSheet.textContent = `
     display: flex;
     gap: 12px;
     flex-wrap: wrap;
+  }
+
+  /* InfluxDB Commands Section */
+  .influxdb-commands {
+    margin-top: 20px;
+    padding: 20px;
+    background: #f0f9ff;
+    border-radius: 8px;
+    border-left: 4px solid #0ea5e9;
+  }
+
+  .influxdb-commands h4 {
+    color: #0c4a6e;
+    margin: 0 0 16px 0;
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  .command-section {
+    margin-bottom: 20px;
+  }
+
+  .command-section h5 {
+    color: #374151;
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .command-box {
+    position: relative;
+    background: #1e293b;
+    color: #f8fafc;
+    padding: 12px;
+    border-radius: 6px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.4;
+    overflow-x: auto;
+    border: 1px solid #334155;
+  }
+
+  .command-box code {
+    background: none;
+    color: inherit;
+    padding: 0;
+    white-space: pre;
+  }
+
+  .copy-command-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: #475569;
+    color: white;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background-color 0.2s;
+  }
+
+  .copy-command-btn:hover {
+    background: #64748b;
+  }
+
+  .setup-links {
+    border-top: 1px solid #bae6fd;
+    padding-top: 16px;
+    margin-top: 20px;
+  }
+
+  .setup-links h5 {
+    color: #0c4a6e;
+    margin: 0 0 12px 0;
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .setup-link-btn {
+    background: #0ea5e9;
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    margin-right: 12px;
+    margin-bottom: 12px;
+    transition: background-color 0.2s;
+    text-decoration: none;
+    display: inline-block;
+  }
+
+  .setup-link-btn:hover {
+    background: #0284c7;
+  }
+
+  .setup-steps {
+    background: #fefce8;
+    padding: 16px;
+    border-radius: 6px;
+    border-left: 3px solid #facc15;
+    margin-top: 12px;
+  }
+
+  .setup-steps p {
+    margin: 0 0 8px 0;
+    color: #854d0e;
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  .setup-steps ol {
+    margin: 8px 0 0 0;
+    padding-left: 20px;
+    color: #713f12;
+  }
+
+  .setup-steps li {
+    margin-bottom: 4px;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .setup-steps code {
+    background: #fef3c7;
+    color: #92400e;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
   }
 `;
 

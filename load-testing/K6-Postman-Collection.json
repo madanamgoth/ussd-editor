@@ -1,0 +1,548 @@
+{
+	"info": {
+		"name": "K6 Load Testing via Postman",
+		"description": "Control K6 load tests directly from Postman",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "k6_server",
+			"value": "http://localhost:3001",
+			"description": "K6 API Server URL"
+		},
+		{
+			"key": "test_id",
+			"value": "",
+			"description": "Current test ID"
+		},
+		{
+			"key": "environment",
+			"value": "staging",
+			"description": "Test environment"
+		}
+	],
+	"item": [
+		{
+			"name": "🔧 Setup & Configuration",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{k6_server}}/health",
+							"host": ["{{k6_server}}"],
+							"path": ["health"]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('K6 API Server is healthy', function () {",
+									"    pm.response.to.have.status(200);",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.status).to.equal('healthy');",
+									"});",
+									"",
+									"console.log('✅ K6 API Server is ready for load testing!');"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Set Test Parameters",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"// Configure your K6 test parameters",
+									"pm.environment.set('k6_vus', 50);",
+									"pm.environment.set('k6_duration', '5m');",
+									"pm.environment.set('k6_test_name', 'ussd-postman-triggered');",
+									"pm.environment.set('timestamp', Date.now());",
+									"",
+									"console.log('🎯 Test Parameters Set:');",
+									"console.log('- VUs: 50');",
+									"console.log('- Duration: 5 minutes');",
+									"console.log('- Test: ussd-postman-triggered');"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{k6_server}}/api/tests",
+							"host": ["{{k6_server}}"],
+							"path": ["api", "tests"]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Can list existing tests', function () {",
+									"    pm.response.to.have.status(200);",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.success).to.be.true;",
+									"});",
+									"",
+									"const response = pm.response.json();",
+									"console.log(`📊 Found ${response.total} existing tests`);"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "🚀 Execute K6 Tests",
+			"item": [
+				{
+					"name": "Start USSD Load Test",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"testName\": \"{{k6_test_name}}\",\n    \"vus\": {{k6_vus}},\n    \"duration\": \"{{k6_duration}}\",\n    \"environment\": \"{{environment}}\",\n    \"testScript\": \"ussd-load-test-enhanced.js\",\n    \"tags\": {\n        \"version\": \"v2.0\",\n        \"triggered_by\": \"postman\",\n        \"team\": \"qa\",\n        \"test_type\": \"load\"\n    },\n    \"outputs\": [\n        \"json=/home/mobiquity/loadtest/{{k6_test_name}}-{{timestamp}}.json\",\n        \"--summary-export=/home/mobiquity/loadtest/{{k6_test_name}}-summary-{{timestamp}}.json\"\n    ]\n}"
+						},
+						"url": {
+							"raw": "{{k6_server}}/api/start-k6-test",
+							"host": ["{{k6_server}}"],
+							"path": ["api", "start-k6-test"]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('K6 test started successfully', function () {",
+									"    pm.response.to.have.status(200);",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.success).to.be.true;",
+									"    pm.expect(response.status).to.equal('running');",
+									"});",
+									"",
+									"// Store test ID for monitoring",
+									"const response = pm.response.json();",
+									"pm.environment.set('test_id', response.testId);",
+									"",
+									"console.log('🚀 K6 Load Test Started!');",
+									"console.log(`📋 Test ID: ${response.testId}`);",
+									"console.log(`⏱️ Duration: ${response.estimatedDuration}`);",
+									"console.log(`👥 Virtual Users: ${response.config.vus}`);",
+									"console.log('');",
+									"console.log('🔄 Monitor progress with the \"Check Test Status\" request');"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Start Stress Test (High Load)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"testName\": \"ussd-stress-test\",\n    \"vus\": 200,\n    \"duration\": \"10m\",\n    \"environment\": \"{{environment}}\",\n    \"testScript\": \"ussd-load-test-enhanced.js\",\n    \"tags\": {\n        \"version\": \"v2.0\",\n        \"triggered_by\": \"postman\",\n        \"test_type\": \"stress\",\n        \"target_load\": \"high\"\n    }\n}"
+						},
+						"url": {
+							"raw": "{{k6_server}}/api/start-k6-test",
+							"host": ["{{k6_server}}"],
+							"path": ["api", "start-k6-test"]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Stress test started', function () {",
+									"    pm.response.to.have.status(200);",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.success).to.be.true;",
+									"});",
+									"",
+									"const response = pm.response.json();",
+									"pm.environment.set('test_id', response.testId);",
+									"console.log('💪 Stress Test Started with 200 VUs!');"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Check Test Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{k6_server}}/api/test-status/{{test_id}}",
+							"host": ["{{k6_server}}"],
+							"path": ["api", "test-status", "{{test_id}}"]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Test status retrieved', function () {",
+									"    pm.response.to.have.status(200);",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.success).to.be.true;",
+									"});",
+									"",
+									"const response = pm.response.json();",
+									"const status = response.status;",
+									"",
+									"console.log(`📊 Test Status: ${status.toUpperCase()}`);",
+									"console.log(`⏱️ Start Time: ${new Date(response.startTime).toLocaleString()}`);",
+									"",
+									"if (status === 'running') {",
+									"    const elapsed = new Date() - new Date(response.startTime);",
+									"    console.log(`⏳ Running for: ${Math.floor(elapsed / 1000)} seconds`);",
+									"    console.log('🔄 Test is still in progress...');",
+									"} else if (status === 'completed') {",
+									"    console.log('✅ Test completed successfully!');",
+									"    console.log('📊 Use \"Get Test Results\" to view metrics');",
+									"} else if (status === 'failed') {",
+									"    console.log('❌ Test failed');",
+									"} else if (status === 'stopped') {",
+									"    console.log('🛑 Test was stopped');",
+									"}",
+									"",
+									"// Show recent logs if available",
+									"if (response.recentLogs && response.recentLogs.length > 0) {",
+									"    console.log('📋 Recent logs:');",
+									"    response.recentLogs.forEach(log => {",
+									"        console.log(`  ${log.type}: ${log.message.trim()}`);",
+									"    });",
+									"}"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Stop Running Test",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{k6_server}}/api/stop-test/{{test_id}}",
+							"host": ["{{k6_server}}"],
+							"path": ["api", "stop-test", "{{test_id}}"]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Test stop request processed', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"const response = pm.response.json();",
+									"if (response.success) {",
+									"    console.log('🛑 Test stopped successfully');",
+									"} else {",
+									"    console.log(`⚠️ ${response.message}`);",
+									"}"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "📊 Results & Analysis",
+			"item": [
+				{
+					"name": "Get Test Results",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{k6_server}}/api/test-results/{{test_id}}",
+							"host": ["{{k6_server}}"],
+							"path": ["api", "test-results", "{{test_id}}"]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Test results retrieved', function () {",
+									"    pm.response.to.have.status(200);",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.success).to.be.true;",
+									"});",
+									"",
+									"const response = pm.response.json();",
+									"",
+									"if (response.status === 'running') {",
+									"    console.log('⏳ Test is still running. Please wait and try again.');",
+									"    return;",
+									"}",
+									"",
+									"console.log('📊 K6 LOAD TEST RESULTS');",
+									"console.log('========================');",
+									"console.log(`📋 Test ID: ${response.testId}`);",
+									"console.log(`⏱️ Duration: ${Math.floor(response.duration / 1000)} seconds`);",
+									"console.log(`🏁 Status: ${response.status.toUpperCase()}`);",
+									"console.log('');",
+									"",
+									"// Validate excellent performance metrics (like your previous results)",
+									"if (response.results && response.results.summary) {",
+									"    const metrics = response.results.summary;",
+									"    ",
+									"    console.log('🎯 KEY PERFORMANCE METRICS:');",
+									"    console.log('----------------------------');",
+									"    ",
+									"    // Response Time Analysis",
+									"    if (metrics.http_req_duration) {",
+									"        const rt = metrics.http_req_duration;",
+									"        console.log(`⚡ Response Time P95: ${rt.p95?.toFixed(2)}ms`);",
+									"        console.log(`⚡ Response Time Avg: ${rt.avg?.toFixed(2)}ms`);",
+									"        ",
+									"        // Test your excellent thresholds",
+									"        pm.test('Response time P95 < 3000ms', () => {",
+									"            pm.expect(rt.p95).to.be.below(3000);",
+									"        });",
+									"    }",
+									"    ",
+									"    // Error Rate Analysis",
+									"    if (metrics.http_req_failed) {",
+									"        const errors = metrics.http_req_failed;",
+									"        const errorRate = (errors.avg * 100).toFixed(2);",
+									"        console.log(`❌ Error Rate: ${errorRate}%`);",
+									"        ",
+									"        pm.test('Error rate < 5%', () => {",
+									"            pm.expect(errors.avg).to.be.below(0.05);",
+									"        });",
+									"    }",
+									"    ",
+									"    // Request Rate",
+									"    if (metrics.http_reqs) {",
+									"        console.log(`🔄 Total Requests: ${metrics.http_reqs.count}`);",
+									"        console.log(`📈 Avg Request Rate: ${metrics.http_reqs.avg?.toFixed(2)}/sec`);",
+									"    }",
+									"    ",
+									"    // VU Analysis",
+									"    if (metrics.vus) {",
+									"        console.log(`👥 Max Virtual Users: ${metrics.vus.max}`);",
+									"    }",
+									"    ",
+									"    // Business Metrics (based on your USSD flow)",
+									"    if (metrics.checks) {",
+									"        const successRate = (metrics.checks.avg * 100).toFixed(2);",
+									"        console.log(`✅ Success Rate: ${successRate}%`);",
+									"        ",
+									"        pm.test('Success rate > 90%', () => {",
+									"            pm.expect(metrics.checks.avg).to.be.above(0.9);",
+									"        });",
+									"    }",
+									"    ",
+									"    console.log('');",
+									"    console.log('🎉 PERFORMANCE ASSESSMENT:');",
+									"    ",
+									"    // Overall assessment based on your previous excellent results",
+									"    let assessment = '✅ EXCELLENT';",
+									"    if (metrics.http_req_duration?.p95 > 1000) assessment = '⚠️ NEEDS ATTENTION';",
+									"    if (metrics.http_req_failed?.avg > 0.05) assessment = '❌ POOR';",
+									"    ",
+									"    console.log(`Overall Performance: ${assessment}`);",
+									"    ",
+									"    // Recommendations",
+									"    console.log('');",
+									"    console.log('💡 RECOMMENDATIONS:');",
+									"    if (metrics.http_req_duration?.p95 < 200) {",
+									"        console.log('   • Response times are excellent - ready for production!');",
+									"    }",
+									"    if (metrics.http_req_failed?.avg === 0) {",
+									"        console.log('   • Zero errors - perfect reliability!');",
+									"    }",
+									"    if (metrics.checks?.avg === 1) {",
+									"        console.log('   • 100% success rate - outstanding performance!');",
+									"    }",
+									"}",
+									"",
+									"// Store results for potential follow-up actions",
+									"if (response.results) {",
+									"    pm.environment.set('last_test_results', JSON.stringify(response.results.summary));",
+									"}",
+									"",
+									"console.log('');",
+									"console.log('📁 Results File: ' + (response.resultsFile || 'Not available'));",
+									"console.log('🔗 Full output in response body');"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "List All Tests",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{k6_server}}/api/tests",
+							"host": ["{{k6_server}}"],
+							"path": ["api", "tests"]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Tests list retrieved', function () {",
+									"    pm.response.to.have.status(200);",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.success).to.be.true;",
+									"});",
+									"",
+									"const response = pm.response.json();",
+									"console.log(`📊 Found ${response.total} tests:`);",
+									"console.log('');",
+									"",
+									"response.tests.forEach((test, index) => {",
+									"    console.log(`${index + 1}. ${test.testName} (${test.id})`);",
+									"    console.log(`   Status: ${test.status}`);",
+									"    console.log(`   Started: ${new Date(test.startTime).toLocaleString()}`);",
+									"    if (test.endTime) {",
+									"        console.log(`   Duration: ${Math.floor(test.duration / 1000)} seconds`);",
+									"    }",
+									"    console.log(`   Config: ${test.config.vus} VUs for ${test.config.duration}`);",
+									"    console.log('');",
+									"});"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "🔄 Automated Workflows",
+			"item": [
+				{
+					"name": "Complete Test Workflow",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"// Automated workflow: Start test → Monitor → Get results",
+									"console.log('🔄 Starting automated K6 test workflow...');",
+									"",
+									"// Set parameters for automated test",
+									"pm.environment.set('k6_vus', 25);",
+									"pm.environment.set('k6_duration', '2m');",
+									"pm.environment.set('k6_test_name', 'automated-workflow-test');",
+									"pm.environment.set('timestamp', Date.now());"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"testName\": \"{{k6_test_name}}\",\n    \"vus\": {{k6_vus}},\n    \"duration\": \"{{k6_duration}}\",\n    \"environment\": \"{{environment}}\",\n    \"testScript\": \"ussd-load-test-enhanced.js\",\n    \"tags\": {\n        \"workflow\": \"automated\",\n        \"triggered_by\": \"postman_workflow\"\n    }\n}"
+						},
+						"url": {
+							"raw": "{{k6_server}}/api/start-k6-test",
+							"host": ["{{k6_server}}"],
+							"path": ["api", "start-k6-test"]
+						}
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Workflow test started', function () {",
+									"    pm.response.to.have.status(200);",
+									"    const response = pm.response.json();",
+									"    pm.expect(response.success).to.be.true;",
+									"});",
+									"",
+									"const response = pm.response.json();",
+									"pm.environment.set('test_id', response.testId);",
+									"",
+									"console.log('🚀 Automated workflow test started!');",
+									"console.log('⏳ Will auto-monitor progress...');",
+									"",
+									"// Auto-monitor the test progress",
+									"const monitorTest = () => {",
+									"    setTimeout(() => {",
+									"        pm.sendRequest({",
+									"            url: `{{k6_server}}/api/test-status/${response.testId}`,",
+									"            method: 'GET'",
+									"        }, (err, res) => {",
+									"            if (res) {",
+									"                const status = res.json();",
+									"                console.log(`📊 Status: ${status.status}`);",
+									"                ",
+									"                if (status.status === 'running') {",
+									"                    monitorTest(); // Check again",
+									"                } else if (status.status === 'completed') {",
+									"                    console.log('✅ Test completed! Fetching results...');",
+									"                    ",
+									"                    // Auto-fetch results",
+									"                    pm.sendRequest({",
+									"                        url: `{{k6_server}}/api/test-results/${response.testId}`,",
+									"                        method: 'GET'",
+									"                    }, (err, res) => {",
+									"                        if (res) {",
+									"                            console.log('📊 Results retrieved automatically!');",
+									"                        }",
+									"                    });",
+									"                }",
+									"            }",
+									"        });",
+									"    }, 10000); // Check every 10 seconds",
+									"};",
+									"",
+									"monitorTest();"
+								]
+							}
+						}
+					]
+				}
+			]
+		}
+	]
+}
