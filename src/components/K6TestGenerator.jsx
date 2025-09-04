@@ -1008,43 +1008,82 @@ function validateUSSDResponse(response, expectedResponse = null, nodeType = null
         return hasResponse;
       };
     } else if (expectedResponse && expectedResponse.trim().length > 0) {
-      // For non-ACTION nodes, validate against expected content
+      // ENHANCED CONTENT VALIDATION - Fixed string comparison
       checks['contains expected content'] = (r) => {
-        const responseBody = r.body.trim();
-        const expected = expectedResponse.trim();
+        // Clean both strings for robust comparison
+        const cleanActual = r.body
+          .replace(/\\r\\n/g, '\\n')           // Normalize line endings
+          .replace(/\\r/g, '\\n')             // Handle single \\r
+          .replace(/\\s+/g, ' ')             // Normalize whitespace
+          .trim()                           // Remove leading/trailing whitespace
+          .toLowerCase();                   // Case insensitive
+          
+        const cleanExpected = expectedResponse
+          .replace(/\\r\\n/g, '\\n')           // Normalize line endings
+          .replace(/\\r/g, '\\n')             // Handle single \\r
+          .replace(/\\s+/g, ' ')             // Normalize whitespace
+          .trim()                           // Remove leading/trailing whitespace
+          .toLowerCase();                   // Case insensitive
+        
+        console.log(\`🔍 Comparing (cleaned):\`);
+        console.log(\`   Expected: "\${cleanExpected}"\`);
+        console.log(\`   Actual:   "\${cleanActual}"\`);
         
         let contentMatch = false;
         
-        // Try exact match first
-        if (responseBody.includes(expected)) {
+        // 1. Try exact match (cleaned)
+        if (cleanActual === cleanExpected) {
           contentMatch = true;
+          console.log(\`✅ Exact match found\`);
         }
-        // Try case-insensitive match
-        else if (responseBody.toLowerCase().includes(expected.toLowerCase())) {
+        // 2. Try contains match (cleaned)
+        else if (cleanActual.includes(cleanExpected)) {
           contentMatch = true;
+          console.log(\`✅ Contains match found\`);
         }
-        // For menu responses, check if response contains menu structure
-        else if (expected.includes('\\n') && (expected.includes('1.') || expected.includes('2.'))) {
-          const menuOptions = expected.split('\\n').filter(line => line.trim().match(/^\\d+\\./));
-          const bodyLower = responseBody.toLowerCase();
-          const foundOptions = menuOptions.filter(option => 
-            bodyLower.includes(option.toLowerCase().substring(0, 10))
-          );
-          contentMatch = foundOptions.length >= Math.floor(menuOptions.length / 2);
+        // 3. Try reverse contains (expected contains actual)
+        else if (cleanExpected.includes(cleanActual)) {
+          contentMatch = true;
+          console.log(\`✅ Reverse contains match found\`);
         }
-        // Try partial match for key phrases
+        // 4. For menu responses, check structure
+        else if (cleanExpected.includes('1.') || cleanExpected.includes('2.')) {
+          const expectedMenuOptions = cleanExpected.match(/\\d+\\.\\s*[^\\n]*/g) || [];
+          const actualMenuOptions = cleanActual.match(/\\d+\\.\\s*[^\\n]*/g) || [];
+          
+          if (expectedMenuOptions.length > 0 && actualMenuOptions.length > 0) {
+            const matchingOptions = expectedMenuOptions.filter(expectedOption => 
+              actualMenuOptions.some(actualOption => 
+                actualOption.includes(expectedOption.substring(3, 15)) // Compare first few words
+              )
+            );
+            contentMatch = matchingOptions.length >= Math.floor(expectedMenuOptions.length / 2);
+            console.log(\`📋 Menu match: \${matchingOptions.length}/\${expectedMenuOptions.length} options matched\`);
+          }
+        }
+        // 5. Keyword-based matching for partial content
         else {
-          const keyWords = expected.toLowerCase()
+          const expectedKeywords = cleanExpected
             .replace(/[^\\w\\s]/g, ' ')
             .split(/\\s+/)
             .filter(word => word.length > 3)
             .filter(word => !['please', 'enter', 'your', 'the', 'and', 'for', 'with', 'thank', 'using'].includes(word));
             
-          if (keyWords.length > 0) {
-            const bodyLower = responseBody.toLowerCase();
-            const matchedWords = keyWords.filter(word => bodyLower.includes(word));
-            contentMatch = matchedWords.length >= Math.ceil(keyWords.length / 2);
+          if (expectedKeywords.length > 0) {
+            const matchedKeywords = expectedKeywords.filter(keyword => 
+              cleanActual.includes(keyword)
+            );
+            contentMatch = matchedKeywords.length >= Math.ceil(expectedKeywords.length * 0.7); // 70% keyword match
+            console.log(\`🔤 Keyword match: \${matchedKeywords.length}/\${expectedKeywords.length} keywords matched\`);
           }
+        }
+        
+        // Enhanced logging for debugging failures
+        if (!contentMatch) {
+          console.log(\`❌ No match found using any method\`);
+          console.log(\`📏 Length comparison - Expected: \${cleanExpected.length}, Actual: \${cleanActual.length}\`);
+          console.log(\`🔤 Raw expected: \${JSON.stringify(expectedResponse)}\`);
+          console.log(\`🔤 Raw actual: \${JSON.stringify(r.body)}\`);
         }
         
         // Track content match rate
