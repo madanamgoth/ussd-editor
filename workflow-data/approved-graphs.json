@@ -1,1 +1,199 @@
-[]
+[
+  {
+    "id": "1757588352615",
+    "nodes": [
+      {
+        "id": "start_1757588282833_224",
+        "type": "start",
+        "position": {
+          "x": 99.87766194130762,
+          "y": 13.2519477619324
+        },
+        "data": {
+          "id": "start_1757588282833_224",
+          "label": "Start",
+          "type": "START",
+          "config": {
+            "prompts": {
+              "en": "Welcome to our service",
+              "es": "Bienvenido a nuestro servicio",
+              "fr": "Bienvenue dans notre service",
+              "ar": "مرحباً بكم في خدمتنا"
+            },
+            "transitions": {
+              "": "menu_1757588288891_511"
+            },
+            "fallback": "",
+            "defaultLanguage": "en"
+          }
+        },
+        "measured": {
+          "width": 229,
+          "height": 85
+        },
+        "selected": false,
+        "dragging": false
+      },
+      {
+        "id": "menu_1757588288891_511",
+        "type": "menu",
+        "position": {
+          "x": 441.86597536971317,
+          "y": -25.68363693883409
+        },
+        "data": {
+          "id": "menu_1757588288891_511",
+          "label": "Menu",
+          "type": "MENU",
+          "config": {
+            "prompts": {
+              "en": "1. Send Money\n2. Check Balance\n3. Pay Bills\n4. Account Info",
+              "es": "1. Enviar Dinero\n2. Consultar Saldo\n3. Pagar Facturas\n4. Info de Cuenta",
+              "fr": "1. Envoyer de l'Argent\n2. Vérifier le Solde\n3. Payer les Factures\n4. Info Compte",
+              "ar": "1. إرسال الأموال\n2. فحص الرصيد\n3. دفع الفواتير\n4. معلومات الحساب"
+            },
+            "transitions": {
+              "1": "",
+              "2": "",
+              "3": "",
+              "4": "",
+              "fallback": "end_1757588303324_273"
+            },
+            "fallback": "",
+            "defaultLanguage": "en"
+          }
+        },
+        "measured": {
+          "width": 180,
+          "height": 245
+        },
+        "selected": false,
+        "dragging": false
+      },
+      {
+        "id": "end_1757588303324_273",
+        "type": "end",
+        "position": {
+          "x": 747.8566261124377,
+          "y": 78.43818171667633
+        },
+        "data": {
+          "id": "end_1757588303324_273",
+          "label": "End",
+          "type": "END",
+          "config": {
+            "prompts": {
+              "en": "Thank you for using our service!",
+              "es": "¡Gracias por usar nuestro servicio!",
+              "fr": "Merci d'utiliser notre service!",
+              "ar": "شكراً لاستخدام خدمتنا!"
+            },
+            "transitions": {},
+            "fallback": "",
+            "defaultLanguage": "en"
+          }
+        },
+        "measured": {
+          "width": 212,
+          "height": 103
+        },
+        "selected": false,
+        "dragging": false
+      }
+    ],
+    "edges": [
+      {
+        "animated": true,
+        "style": {
+          "strokeWidth": 2,
+          "stroke": "#6366f1"
+        },
+        "type": "smoothstep",
+        "markerEnd": {
+          "type": "arrowclosed",
+          "width": 20,
+          "height": 20,
+          "color": "#6366f1"
+        },
+        "focusable": true,
+        "selectable": true,
+        "deletable": true,
+        "interactionWidth": 20,
+        "source": "start_1757588282833_224",
+        "target": "menu_1757588288891_511",
+        "label": "➡️ Next",
+        "labelStyle": {
+          "fill": "#6366f1",
+          "fontWeight": 600,
+          "fontSize": "12px"
+        },
+        "labelBgStyle": {
+          "fill": "white",
+          "fillOpacity": 0.9,
+          "stroke": "#6366f1",
+          "strokeWidth": 1
+        },
+        "labelBgPadding": [
+          4,
+          8
+        ],
+        "labelBgBorderRadius": 4,
+        "id": "xy-edge__start_1757588282833_224-menu_1757588288891_511",
+        "selected": false
+      },
+      {
+        "animated": true,
+        "style": {
+          "strokeWidth": 2,
+          "stroke": "#6366f1"
+        },
+        "type": "smoothstep",
+        "markerEnd": {
+          "type": "arrowclosed",
+          "width": 20,
+          "height": 20,
+          "color": "#6366f1"
+        },
+        "focusable": true,
+        "selectable": true,
+        "deletable": true,
+        "interactionWidth": 20,
+        "source": "menu_1757588288891_511",
+        "sourceHandle": "fallback",
+        "target": "end_1757588303324_273",
+        "label": "🔄 Fallback",
+        "labelStyle": {
+          "fill": "#6366f1",
+          "fontWeight": 600,
+          "fontSize": "12px"
+        },
+        "labelBgStyle": {
+          "fill": "white",
+          "fillOpacity": 0.9,
+          "stroke": "#6366f1",
+          "strokeWidth": 1
+        },
+        "labelBgPadding": [
+          4,
+          8
+        ],
+        "labelBgBorderRadius": 4,
+        "id": "xy-edge__menu_1757588288891_511fallback-end_1757588303324_273",
+        "selected": false
+      }
+    ],
+    "metadata": {
+      "name": "this is new graph",
+      "description": "this is new graph",
+      "version": "1.0.0",
+      "baseVersion": null,
+      "submittedBy": "current-user",
+      "submittedAt": "2025-09-11T10:59:12.615Z",
+      "status": "APPROVED",
+      "approvedAt": "2025-09-11T11:00:41.981Z"
+    },
+    "timestamp": "2025-09-11T10:59:12.585Z",
+    "isEdit": false,
+    "baseGraph": null
+  }
+]
