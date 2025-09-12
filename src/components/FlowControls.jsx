@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { exportToFlowFormat, validateFlow, importFromFlowFormat, generateEdgesFromNodes } from '../utils/flowUtils';
 import AIFlowGenerator from './AIFlowGenerator';
 
-const FlowControls = ({ nodes, edges, onImport, onClear, onAutoLayout, onK6Generate }) => {
+const FlowControls = ({ nodes, edges, onImport, onClear, onAutoLayout, onK6Generate, onWorkflowOpen }) => {
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showValidation, setShowValidation] = useState(false);
@@ -177,6 +177,12 @@ const FlowControls = ({ nodes, edges, onImport, onClear, onAutoLayout, onK6Gener
       
       <div className="controls-buttons">
         <AIFlowGenerator onGenerate={handleAIGenerate} />
+        
+        {onWorkflowOpen && (
+          <button onClick={onWorkflowOpen} className="control-btn workflow-btn">
+            🔄 Maker-Checker Workflow
+          </button>
+        )}
         
         <button onClick={() => handleExport('flow')} className="control-btn export-btn">
           📤 Export Flow

@@ -1337,7 +1337,19 @@
   border-color: #a78bfa;
 }
 
-.control-btn.k6-btn {
+.control-btn.workflow-btn {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  color: white;
+  border: none;
+  box-shadow: 0 4px 12px rgba(240, 147, 251, 0.3);
+}
+
+.workflow-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(240, 147, 251, 0.4);
+}
+
+.k6-btn {
   background-color: #fef3c7;
   border-color: #fbbf24;
   color: #f59e0b;

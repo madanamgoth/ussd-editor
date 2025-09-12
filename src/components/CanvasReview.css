@@ -1,0 +1,242 @@
+/* Canvas Review Modal Styles */
+.canvas-review-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.canvas-review-content {
+  background: var(--bg-secondary, #1a1a2e);
+  border-radius: 12px;
+  width: 90vw;
+  height: 85vh;
+  position: relative;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-color, #333);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.canvas-review-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-color, #333);
+  background: var(--bg-primary, #16213e);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.canvas-review-title {
+  margin: 0;
+  color: var(--text-primary, #ffffff);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.canvas-review-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary, #888);
+  font-size: 24px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.canvas-review-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary, #ffffff);
+}
+
+.canvas-review-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.canvas-review-graph-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: var(--canvas-bg, #0f0f23);
+}
+
+.canvas-review-info {
+  padding: 16px 24px;
+  background: var(--bg-tertiary, #1e1e3f);
+  border-top: 1px solid var(--border-color, #333);
+}
+
+.canvas-review-info h4 {
+  margin: 0 0 8px 0;
+  color: var(--text-primary, #ffffff);
+  font-size: 16px;
+}
+
+.canvas-review-info p {
+  margin: 4px 0;
+  color: var(--text-secondary, #aaa);
+  font-size: 14px;
+}
+
+.canvas-review-metadata {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.canvas-review-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary, #aaa);
+  font-size: 13px;
+}
+
+.canvas-review-actions {
+  padding: 20px 24px;
+  border-top: 1px solid var(--border-color, #333);
+  background: var(--bg-tertiary, #1e1e3f);
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.canvas-review-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvas-review-btn-approve {
+  background: var(--success-color, #28a745);
+  color: white;
+}
+
+.canvas-review-btn-approve:hover {
+  background: var(--success-hover, #218838);
+  transform: translateY(-1px);
+}
+
+.canvas-review-btn-reject {
+  background: var(--danger-color, #dc3545);
+  color: white;
+}
+
+.canvas-review-btn-reject:hover {
+  background: var(--danger-hover, #c82333);
+  transform: translateY(-1px);
+}
+
+.canvas-review-btn-cancel {
+  background: var(--secondary-color, #6c757d);
+  color: white;
+}
+
+.canvas-review-btn-cancel:hover {
+  background: var(--secondary-hover, #5a6268);
+  transform: translateY(-1px);
+}
+
+/* Status indicator */
+.canvas-review-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--warning-color, #ffc107);
+  color: var(--warning-text, #000);
+}
+
+.canvas-review-status::before {
+  content: '⏳';
+  font-size: 14px;
+}
+
+/* Node count indicator */
+.canvas-review-node-count {
+  color: var(--accent-color, #007bff);
+  font-weight: 500;
+}
+
+/* Version indicator */
+.canvas-review-version {
+  background: var(--info-color, #17a2b8);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .canvas-review-content {
+    width: 95vw;
+    height: 90vh;
+  }
+  
+  .canvas-review-header {
+    padding: 16px 20px;
+  }
+  
+  .canvas-review-info {
+    padding: 12px 20px;
+  }
+  
+  .canvas-review-actions {
+    padding: 16px 20px;
+    flex-direction: column;
+  }
+  
+  .canvas-review-btn {
+    justify-content: center;
+  }
+}
+
+/* Animation for modal appearance */
+.canvas-review-modal {
+  animation: modalFadeIn 0.3s ease-out;
+}
+
+.canvas-review-content {
+  animation: modalSlideUp 0.3s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modalSlideUp {
+  from { 
+    opacity: 0;
+    transform: translateY(50px) scale(0.9);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

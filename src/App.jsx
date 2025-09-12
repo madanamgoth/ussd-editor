@@ -19,6 +19,9 @@ import NodePalette from './components/NodePalette';
 import FlowControls from './components/FlowControls';
 import NodeConfigPanel from './components/NodeConfigPanel';
 import K6TestGenerator from './components/K6TestGenerator';
+import MakerCheckerWorkflow from './components/MakerCheckerWorkflow';
+import FloatingSubmitButton from './components/FloatingSubmitButton';
+import DualCanvasComparison from './components/DualCanvasComparison';
 import './components/K6TestGenerator.css';
 import { 
   createNodeData, 
@@ -89,6 +92,14 @@ const DnDFlow = () => {
   const [selectedNode, setSelectedNode] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showK6Generator, setShowK6Generator] = useState(false);
+  const [showWorkflow, setShowWorkflow] = useState(false);
+  const [isEditingFromApproved, setIsEditingFromApproved] = useState(false);
+  const [baseGraphForEditing, setBaseGraphForEditing] = useState(null);
+  
+  // Comparison mode state
+  const [showComparison, setShowComparison] = useState(false);
+  const [comparisonMode, setComparisonMode] = useState('side-by-side');
+  const [comparisonData, setComparisonData] = useState({ original: null, edited: null });
   
   // One-time effect to update all existing edges with new label positioning
   useEffect(() => {
@@ -462,6 +473,86 @@ const DnDFlow = () => {
     console.log('✅ Auto Layout completed - React Flow should update now');
   }, [nodes, edges, setNodes, reactFlowInstance]);
 
+  const handleWorkflowOpen = useCallback(() => {
+    setShowWorkflow(true);
+  }, []);
+
+  const handleWorkflowClose = useCallback(() => {
+    setShowWorkflow(false);
+  }, []);
+
+  const handleLoadGraph = useCallback((workflowNodes, workflowEdges) => {
+    console.log('🔄 handleLoadGraph called with:', {
+      nodes: workflowNodes?.length || 0,
+      edges: workflowEdges?.length || 0,
+      nodeData: workflowNodes,
+      edgeData: workflowEdges
+    });
+    
+    // Add update function to imported nodes
+    const nodesWithUpdate = workflowNodes.map(node => ({
+      ...node,
+      data: {
+        ...node.data,
+        updateNodeData: updateNodeData
+      }
+    }));
+    
+    console.log('📊 Setting nodes and edges on canvas:', {
+      processedNodes: nodesWithUpdate.length,
+      edges: workflowEdges?.length || 0
+    });
+    
+    setNodes(nodesWithUpdate);
+    setEdges(workflowEdges || []);
+    
+    console.log('✅ Graph loaded successfully');
+  }, [setNodes, setEdges, updateNodeData]);
+
+  const handleClearCanvas = useCallback(() => {
+    setNodes([]);
+    setEdges([]);
+    setIsEditingFromApproved(false);
+    setBaseGraphForEditing(null);
+  }, [setNodes, setEdges]);
+
+  const handleFloatingSubmit = useCallback(() => {
+    setShowWorkflow(true);
+    // The workflow will pick up the editing state from isEditingFromApproved
+  }, []);
+
+  // Comparison handlers
+  const handleStartComparison = useCallback((originalGraph, editedGraph) => {
+    console.log('🔍 Starting comparison mode with graphs:', originalGraph.metadata.name, editedGraph.metadata.name);
+    setComparisonData({ original: originalGraph, edited: editedGraph });
+    setShowComparison(true);
+    setShowWorkflow(false);
+  }, []);
+
+  const handleComparisonModeChange = useCallback((mode) => {
+    console.log('🔄 Changing comparison mode to:', mode);
+    setComparisonMode(mode);
+  }, []);
+
+  const handleApproveComparison = useCallback(() => {
+    console.log('✅ Approving comparison');
+    // TODO: Implement approval logic
+    alert('Graph changes approved!');
+    setShowComparison(false);
+    setComparisonData({ original: null, edited: null });
+  }, []);
+
+  const handleRejectComparison = useCallback(() => {
+    console.log('❌ Rejecting comparison');
+    // TODO: Implement rejection logic with reason
+    const reason = prompt('Please provide a reason for rejection:');
+    if (reason) {
+      alert(`Graph changes rejected: ${reason}`);
+      setShowComparison(false);
+      setComparisonData({ original: null, edited: null });
+    }
+  }, []);
+
   return (
     <div className="ussd-editor">
       {/* Sidebar Toggle Button */}
@@ -497,6 +588,7 @@ const DnDFlow = () => {
             onClear={handleClear}
             onAutoLayout={handleAutoLayout}
             onK6Generate={() => setShowK6Generator(true)}
+            onWorkflowOpen={handleWorkflowOpen}
           />
         </div>
       )}
@@ -526,6 +618,8 @@ const DnDFlow = () => {
             fitView
             deleteKeyCode={['Backspace', 'Delete']}
             selectNodesOnDrag={false}
+            nodesDraggable={true}
+            nodesConnectable={true}
             edgesFocusable={true}
             edgesReconnectable={false}
             elementsSelectable={true}
@@ -556,6 +650,50 @@ const DnDFlow = () => {
           edges={edges}
           onClose={() => setShowK6Generator(false)}
         />
+      )}
+      
+      {/* Maker-Checker Workflow Modal */}
+      {showWorkflow && (
+        <MakerCheckerWorkflow
+          nodes={nodes}
+          edges={edges}
+          onClose={handleWorkflowClose}
+          onLoadGraph={handleLoadGraph}
+          onClearCanvas={handleClearCanvas}
+          isEditingFromApproved={isEditingFromApproved}
+          setIsEditingFromApproved={setIsEditingFromApproved}
+          baseGraphForEditing={baseGraphForEditing}
+          setBaseGraphForEditing={setBaseGraphForEditing}
+          onEditFromApprovedComplete={handleFloatingSubmit}
+          onStartComparison={handleStartComparison}
+        />
+      )}
+
+      {/* Floating Submit Button for Maker */}
+      <FloatingSubmitButton
+        isVisible={isEditingFromApproved && !showWorkflow && !showK6Generator && !showComparison}
+        onSubmit={handleFloatingSubmit}
+        baseGraph={baseGraphForEditing}
+      />
+
+      {/* Dual Canvas Comparison */}
+      {showComparison && (
+        <DualCanvasComparison
+          originalGraph={comparisonData.original}
+          editedGraph={comparisonData.edited}
+          comparisonMode={comparisonMode}
+          onModeChange={handleComparisonModeChange}
+          onApprove={handleApproveComparison}
+          onReject={handleRejectComparison}
+          graphName={comparisonData.edited?.metadata?.name || 'Unknown Graph'}
+        />
+      )}
+      
+      {/* Debug info */}
+      {process.env.NODE_ENV === 'development' && (
+        <div style={{position: 'fixed', top: '10px', right: '10px', background: 'rgba(0,0,0,0.8)', color: 'white', padding: '8px', fontSize: '12px', zIndex: 9999}}>
+          Debug: isEditingFromApproved={isEditingFromApproved.toString()}, showWorkflow={showWorkflow.toString()}, baseGraph={baseGraphForEditing?.metadata?.name || 'null'}, showComparison={showComparison.toString()}
+        </div>
       )}
     </div>
   );

@@ -7,10 +7,17 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "git-server": "node git-workflow-server.js",
+    "git-server:prod": "NODE_ENV=production node git-workflow-server.js",
+    "dev:full": "concurrently \"npm run git-server\" \"npm run dev\"",
+    "start": "npm run git-server:prod",
+    "build:full": "npm run build && npm run start"
   },
   "dependencies": {
     "@xyflow/react": "^12.8.4",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
@@ -19,6 +26,7 @@
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
     "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^8.2.2",
     "eslint": "^9.33.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
