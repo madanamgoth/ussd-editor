@@ -1,0 +1,371 @@
+/* Enhanced Data Type Grouping Styles */
+.data-type-description {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 15px;
+}
+
+.data-type-description h6 {
+  margin: 0 0 8px 0;
+}
+
+/* Template grouping styles */
+.template-group-header {
+  font-weight: bold;
+  color: #495057;
+  background: linear-gradient(to right, #e3f2fd, #f8f9fa);
+  border-left: 3px solid #2196f3;
+  padding: 2px 8px;
+  font-size: 0.9em;
+}
+
+.template-variable-option {
+  padding-left: 20px;
+  background: #fafafa;
+  color: #333;
+}
+
+.template-variable-option:hover {
+  background: #e3f2fd;
+}
+
+.data-type-description p {
+  margin: 0;
+  font-size: 14px;
+  color: #6c757d;
+}
+
+/* Session Variables Display */
+.available-variables-info {
+  background: #e8f4f8;
+  border: 1px solid #b8daff;
+  border-radius: 6px;
+  padding: 10px;
+  margin: 10px 0;
+}
+
+.available-variables-info h6 {
+  margin: 0 0 8px 0;
+  color: #0c63e4;
+  font-size: 14px;
+}
+
+.variables-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.variable-tag {
+  background: #0d6efd;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+}
+
+/* Static Data Specific Styles */
+.detected-static-values {
+  background: #e8f5e8;
+  border: 1px solid #c3e6c3;
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 15px;
+}
+
+.curl-static-preview {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
+
+.auto-detected-fields {
+  background: white;
+  padding: 8px;
+  border-radius: 4px;
+  margin-top: 5px;
+}
+
+.static-examples {
+  margin-top: 15px;
+}
+
+.example-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.example-tag {
+  background: #007bff;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.example-tag:hover {
+  background: #0056b3;
+}
+
+/* Session Data Specific Styles */
+.session-data-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.session-section {
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 15px;
+  background: #ffffff;
+}
+
+.session-section h6 {
+  margin: 0 0 10px 0;
+  color: #495057;
+  font-weight: 600;
+}
+
+.menu-selection-section {
+  background: #fff3cd;
+  border-color: #ffeaa7;
+}
+
+.menu-detection-info {
+  background: #d4edda;
+  border: 1px solid #c3e6cb;
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 10px;
+}
+
+.menu-detection-info p {
+  margin: 0 0 5px 0;
+  font-weight: 500;
+}
+
+.no-menu-section {
+  background: #f8f9fa;
+  border-color: #dee2e6;
+}
+
+.info-message {
+  color: #6c757d;
+  font-style: italic;
+  margin: 0;
+}
+
+/* Custom Input Sections */
+.custom-input-section, .custom-session-input {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #e9ecef;
+}
+
+.custom-input-section label, .custom-session-input label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+  color: #495057;
+}
+
+/* Help Sections */
+.help-section {
+  margin-top: 15px;
+  padding: 10px;
+  background: #e7f3ff;
+  border-radius: 6px;
+  border-left: 4px solid #007bff;
+}
+
+.help-section .help-text {
+  margin: 0;
+  color: #495057;
+}
+
+/* Enhanced Radio Buttons */
+.radio-group-enhanced {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.radio-label-enhanced {
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  padding: 15px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: white;
+}
+
+.radio-label-enhanced:hover {
+  border-color: #007bff;
+  background: #f8f9fa;
+}
+
+.radio-label-enhanced input[type="radio"]:checked + .radio-content {
+  border-color: #007bff;
+}
+
+.radio-label-enhanced input[type="radio"]:checked ~ * {
+  color: #007bff;
+}
+
+.radio-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.radio-icon {
+  font-size: 24px;
+}
+
+.radio-text {
+  flex: 1;
+}
+
+.radio-text strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 16px;
+}
+
+.radio-text small {
+  display: block;
+  color: #6c757d;
+  font-size: 12px;
+}
+
+/* Dropdown Enhancements */
+.store-attribute-select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 14px;
+  background: white;
+}
+
+.store-attribute-select optgroup {
+  font-weight: bold;
+  color: #495057;
+  background: #f8f9fa;
+}
+
+.store-attribute-select option {
+  padding: 4px 8px;
+  color: #212529;
+}
+
+/* Static Value Input Enhancement */
+.static-value-input-section {
+  margin-bottom: 15px;
+}
+
+.static-value-input-section label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+  color: #495057;
+}
+
+.static-value-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+}
+
+/* JOLT Variables Info */
+.jolt-variables-info {
+  background: #e3f2fd;
+  border: 1px solid #bbdefb;
+  border-radius: 6px;
+  padding: 12px;
+  margin-top: 15px;
+}
+
+.jolt-variables-info h6 {
+  margin: 0 0 10px 0;
+  color: #1976d2;
+  font-weight: 600;
+}
+
+.pattern-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pattern-item {
+  background: white;
+  padding: 8px;
+  border-radius: 4px;
+  border-left: 3px solid #2196f3;
+  font-size: 14px;
+}
+
+.pattern-item strong {
+  color: #1976d2;
+}
+
+.pattern-item code {
+  background: #f5f5f5;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  color: #d63384;
+  font-size: 12px;
+}
+
+/* JOLT Quick Templates */
+.jolt-quick-templates {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #e9ecef;
+}
+
+.jolt-quick-templates h6 {
+  margin: 0 0 10px 0;
+  color: #495057;
+  font-weight: 600;
+}
+
+.template-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.template-btn {
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: 'Courier New', monospace;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.template-btn:hover {
+  background: #218838;
+}
+
+.template-btn:active {
+  transform: translateY(1px);
+}

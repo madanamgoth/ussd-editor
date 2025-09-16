@@ -1,0 +1,107 @@
+{
+  "_id": "PaymentStatusTWO",
+  "target": {
+    "endpoint": "http://127.0.0.1:9091/payx-service/admin/register",
+    "method": "POST",
+    "headers": {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "X-Channel": "API",
+      "X-Client-IP": "XX.XX.XX.XX",
+      "X-DeviceId": "ESB",
+      "APIVersion": "V1.0",
+      "Authorization": "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Imp3cy1rZXktcHVibGljLTEifQ.eyJleHAiOjE3NDk2OTk4MTcsInVzZXJfbmFtZSI6IjUxYTc3NGM1LTA4ZGEtNDdhYi1hOWZjLWVkOTM0NGRlMmMzZCIsImF1dGhvcml0aWVzIjpbIlJPTEVfQ0xJRU5UIl0sImp0aSI6ImZjNWQwOTQ1LTQyM2QtNGQ0YS1iYmUzLWQ5NjBiNzNjYzk2MiIsImNsaWVudF9pZCI6IkJhbmtNdXNjYXRFU0IiLCJzY29wZSI6W119.u_8XtExkKre6NGOn2ULMHt-iW1bm_qmc_UkGwXnaWn8FZScw2HVdRY7FkbjOKaFSTKAl6Axbhk6N6fFk4zc5i-2WcpO1IBiLMYU6P8i0gbrfSgRNEoTcU6PWV28s6eK0UxIKc4UJg_c99punYp0HcSFV7bZ2tOtzaUc7A423RTfMgjE4e2OLV6y_jx7H2pi5ePwVgRSdQQT3_QDTYjg2bJmLo83nbHu8VQ1pYaDOA254LIZpUtAmOLvSZ9yT8Ba-lhyo6A83pwUZq5j5mbL-MRiTKRhrtz3989Y7Y97gxyHrDlHNoepTc7cI-sIkP4efrfT8ePK_Zc0FrIWV7sc7MQ"
+    }
+  },
+  "requestTemplate": {
+    "joltSpec": [
+      {
+        "operation": "modify-overwrite-beta",
+        "spec": {
+          "selectedIndex": "=intSubtract(@(1,input.selection),1)",
+          "selectedItem": "=elementAt(@(1,items_menu_BOOK_items),@(1,selectedIndex))"
+        }
+      },
+      {
+        "operation": "shift",
+        "spec": {
+          "input": {
+            "nifi": {
+              "status": "userInformation.workspaceInformation.categoryCode"
+            },
+            "USERPIN": "requestType"
+          },
+          "selectedItem": {
+            "author": "profileDetails.authProfile",
+            "year": "userInformation.basicInformation.emailId",
+            "rating": "userInformation.basicInformation.loginIdentifiers[0].type"
+          }
+        }
+      },
+      {
+        "operation": "default",
+        "spec": {
+          "userInformation": {
+            "basicInformation": {
+              "loginIdentifiers[0]": {
+                "value": "amgothmadanID"
+              },
+              "notificationIdentifiers[0]": {
+                "type": "EMAILID",
+                "value": "madan1@comviva.com"
+              },
+              "allowedDays": "1,2,3,4",
+              "allowedFromTime": "10:00",
+              "allowedToTime": "18:20",
+              "dateOfEmployment": "1990-10-12",
+              "firstName": "Alaina",
+              "lastName": "CustomerCare Admin",
+              "middleName": "Kumar",
+              "preferredLanguage": "en",
+              "remarks": "Demo Registration"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "responseTemplate": {
+    "joltSpec": [
+      {
+        "operation": "shift",
+        "spec": {
+          "status": "nifi2.status"
+        }
+      },
+      {
+        "operation": "default",
+        "spec": {
+          "success": true,
+          "timestamp": "2025-09-15T13:21:31.385Z",
+          "status": "SUCCEEDED"
+        }
+      }
+    ]
+  },
+  "responseErrorTemplate": {
+    "joltSpec": [
+      {
+        "operation": "shift",
+      "spec": {
+          "status": "nifi2.status"
+        }
+      },
+      {
+        "operation": "default",
+        "spec": {
+          "success": false,
+          "error": true,
+          "timestamp": "2025-09-15T13:21:34.068Z",
+          "status": "FAILED",
+          "errorCode": "UNKNOWN_ERROR",
+          "errorMessage": "An error occurred"
+        }
+      }
+    ]
+  }
+}

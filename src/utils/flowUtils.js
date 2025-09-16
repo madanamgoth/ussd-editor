@@ -41,6 +41,65 @@ export const createNodeData = (type, position = { x: 0, y: 0 }) => {
       },
       transitions: { '1': '', '2': '', '3': '', '4': '' }
     },
+    'dynamic-menu': {
+      ...baseConfig,
+      prompts: {
+        en: 'Please select an option:',
+        es: 'Por favor seleccione una opción:',
+        fr: 'Veuillez sélectionner une option:',
+        ar: 'يرجى اختيار خيار:'
+      },
+      dataSource: {
+        type: 'session', // 'session' or 'api'
+        sessionVariable: '', // Variable name from previous Action node
+        responseKey: 'data', // Path to array in session data (supports nested: 'result.items', 'response.data.billers')
+        nameField: 'name', // Field for display text (supports nested: 'details.name', 'info.title')
+        idField: 'id', // Field for unique identifier (supports nested: 'details.id', 'code')
+        // Optional filters and transformations
+        filterField: '', // Optional: field to filter items (e.g., 'status')
+        filterValue: '', // Optional: value to filter by (e.g., 'active')
+        sortBy: '', // Optional: field to sort by
+        sortOrder: 'asc' // 'asc' or 'desc'
+      },
+      // Keep API config for backward compatibility
+      apiConfig: {
+        endpoint: '',
+        method: 'GET',
+        headers: {},
+        responseKey: 'data',
+        nameField: 'name',
+        idField: 'id'
+      },
+      menuMapping: {},
+      // Dynamic routing strategies
+      routingStrategy: {
+        type: 'conditional', // 'fixed', 'conditional', 'single'
+        // For 'fixed': predefined mapping for each option number
+        fixedMapping: {
+          '1': '',
+          '2': '',
+          '3': ''
+        },
+        // For 'conditional': route based on item properties
+        conditionalRules: [
+          {
+            condition: 'item.type === "mobile_money"',
+            targetNode: ''
+          },
+          {
+            condition: 'item.type === "utility"', 
+            targetNode: ''
+          }
+        ],
+        // For 'single': all options go to same next node
+        singleTarget: '',
+        // Default fallback for unmatched conditions
+        defaultTarget: ''
+      },
+      maxMenuItems: 10,
+      fallback: '',
+      transitions: {}
+    },
     input: {
       ...baseConfig,
       prompts: {
@@ -99,6 +158,7 @@ export const getNodeDimensions = (type) => {
   const dimensions = {
     start: { width: 200, height: 120 },
     menu: { width: 220, height: 200 },
+    'dynamic-menu': { width: 250, height: 220 },
     input: { width: 200, height: 150 },
     action: { width: 200, height: 140 },
     end: { width: 180, height: 100 }
@@ -274,6 +334,20 @@ export const exportToFlowFormat = (nodes, edges) => {
                 nextNodeMetadata['*'] = metadata;
               }
             }
+          } else if (nodeType === 'DYNAMIC-MENU') {
+            // For DYNAMIC-MENU nodes, handle option connections similar to MENU
+            if (sourceHandle.startsWith('option-')) {
+              const optionNumber = sourceHandle.replace('option-', '');
+              cleanTransitions[optionNumber] = edge.target;
+              if (metadata) {
+                nextNodeMetadata[optionNumber] = metadata;
+              }
+            } else if (sourceHandle === 'fallback') {
+              cleanTransitions['fallback'] = edge.target;
+              if (metadata) {
+                nextNodeMetadata['fallback'] = metadata;
+              }
+            }
           } else if (nodeType === 'START') {
             // For START nodes, use configured USSD code or skip if empty
             let key = sourceHandle || '';
@@ -304,6 +378,12 @@ export const exportToFlowFormat = (nodes, edges) => {
             // For MENU nodes, prefer the cleaned key format
             const cleanKey = key.startsWith('option-') ? key.replace('option-', '') : key;
             if (/^\d+$/.test(cleanKey) || cleanKey === 'fallback' || cleanKey === '*') {
+              cleanTransitions[cleanKey] = value;
+            }
+          } else if (nodeType === 'DYNAMIC-MENU') {
+            // For DYNAMIC-MENU nodes, handle option transitions and menu mapping
+            const cleanKey = key.startsWith('option-') ? key.replace('option-', '') : key;
+            if (/^\d+$/.test(cleanKey) || cleanKey === 'fallback') {
               cleanTransitions[cleanKey] = value;
             }
           } else if (nodeType === 'ACTION') {
@@ -382,8 +462,27 @@ export const exportToFlowFormat = (nodes, edges) => {
       }
     }
     
-    if (config.fallback && config.fallback.trim() !== '' && nodeType !== 'MENU') {
-      // For MENU nodes, fallback is already in transitions
+    // For DYNAMIC-MENU nodes, include API configuration and menu mapping
+    if (nodeType === 'DYNAMIC-MENU') {
+      if (config.dataSource) {
+        cleanNode.dataSource = config.dataSource;
+      }
+      if (config.apiConfig) {
+        cleanNode.apiConfig = config.apiConfig;
+      }
+      if (config.menuMapping) {
+        cleanNode.menuMapping = config.menuMapping;
+      }
+      if (config.routingStrategy) {
+        cleanNode.routingStrategy = config.routingStrategy;
+      }
+      if (config.maxMenuItems) {
+        cleanNode.maxMenuItems = config.maxMenuItems;
+      }
+    }
+    
+    if (config.fallback && config.fallback.trim() !== '' && nodeType !== 'MENU' && nodeType !== 'DYNAMIC-MENU') {
+      // For MENU and DYNAMIC-MENU nodes, fallback is already in transitions
       cleanNode.fallback = config.fallback;
     }
 

@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JOLT Generation Test Suite</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-case { 
+            border: 1px solid #ddd; 
+            margin: 10px 0; 
+            padding: 15px; 
+            border-radius: 5px; 
+        }
+        .passed { border-left: 5px solid #28a745; background: #f8fff9; }
+        .failed { border-left: 5px solid #dc3545; background: #fff8f8; }
+        .code { 
+            background: #f4f4f4; 
+            padding: 10px; 
+            border-radius: 3px; 
+            font-family: monospace; 
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        button { 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            padding: 10px 20px; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        .summary { 
+            background: #e9ecef; 
+            padding: 15px; 
+            border-radius: 5px; 
+            margin: 20px 0; 
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 JOLT Generation Test Suite</h1>
+    <p>This page tests your JOLT generation logic with comprehensive test cases.</p>
+    
+    <div class="summary">
+        <h3>📊 Test Summary</h3>
+        <div id="test-summary">Click "Run All Tests" to see results</div>
+    </div>
+    
+    <button onclick="runAllTests()">🚀 Run All Tests</button>
+    <button onclick="clearResults()">🗑️ Clear Results</button>
+    <button onclick="exportTestResults()">📥 Export Results</button>
+    
+    <div id="test-results"></div>
+    
+    <script>
+        // Test cases data
+        const TEST_CASES = [
+            {
+                name: "Basic Dynamic Fields Only",
+                description: "Template with only user input fields",
+                requestMapping: [
+                    { mappingType: 'dynamic', storeAttribute: 'USERPIN', targetPath: 'requestType' },
+                    { mappingType: 'dynamic', storeAttribute: 'AMOUNT', targetPath: 'amount' }
+                ],
+                hasSessionFields: false,
+                expectedStructure: {
+                    operationCount: 2,
+                    operations: ['shift', 'default'],
+                    hasModifyOverwrite: false
+                }
+            },
+            {
+                name: "Session-Aware Template",
+                description: "Template with selectedItem fields",
+                requestMapping: [
+                    { mappingType: 'dynamic', storeAttribute: 'USERPIN', targetPath: 'requestType' },
+                    { mappingType: 'session', storeAttribute: 'selectedItem.author', targetPath: 'profileDetails.authProfile' },
+                    { mappingType: 'session', storeAttribute: 'selectedItem.year', targetPath: 'userInformation.basicInformation.emailId' }
+                ],
+                hasSessionFields: true,
+                menuArrayName: 'items_menu_BOOK_items',
+                expectedStructure: {
+                    operationCount: 3,
+                    operations: ['modify-overwrite-beta', 'shift', 'default'],
+                    hasModifyOverwrite: true,
+                    hasSelectedItemSection: true
+                }
+            },
+            {
+                name: "Mixed Field Types",
+                description: "Dynamic, session, and static fields",
+                requestMapping: [
+                    { mappingType: 'dynamic', storeAttribute: 'USERPIN', targetPath: 'auth.pin' },
+                    { mappingType: 'session', storeAttribute: 'selectedItem.title', targetPath: 'product.name' },
+                    { mappingType: 'static', staticValue: 'PURCHASE', targetPath: 'transaction.type' }
+                ],
+                hasSessionFields: true,
+                menuArrayName: 'items_menu_PRODUCTS_items',
+                expectedStructure: {
+                    operationCount: 3,
+                    operations: ['modify-overwrite-beta', 'shift', 'default'],
+                    hasModifyOverwrite: true,
+                    hasInputSection: true,
+                    hasSelectedItemSection: true,
+                    hasDefaultSection: true
+                }
+            },
+            {
+                name: "Nested Object Paths",
+                description: "Deep nested target paths",
+                requestMapping: [
+                    { mappingType: 'session', storeAttribute: 'selectedItem.author', targetPath: 'user.profile.details.author' },
+                    { mappingType: 'session', storeAttribute: 'selectedItem.rating', targetPath: 'metrics[0].scores.rating' }
+                ],
+                hasSessionFields: true,
+                menuArrayName: 'items_menu_BOOK_items',
+                expectedStructure: {
+                    operationCount: 3,
+                    operations: ['modify-overwrite-beta', 'shift', 'default'],
+                    hasModifyOverwrite: true
+                }
+            },
+            {
+                name: "Multiple Session Fields",
+                description: "Many selectedItem fields",
+                requestMapping: [
+                    { mappingType: 'session', storeAttribute: 'selectedItem.title', targetPath: 'book.title' },
+                    { mappingType: 'session', storeAttribute: 'selectedItem.author', targetPath: 'book.author' },
+                    { mappingType: 'session', storeAttribute: 'selectedItem.year', targetPath: 'book.year' },
+                    { mappingType: 'session', storeAttribute: 'selectedItem.price', targetPath: 'book.price' },
+                    { mappingType: 'session', storeAttribute: 'selectedItem.rating', targetPath: 'book.rating' }
+                ],
+                hasSessionFields: true,
+                menuArrayName: 'items_menu_BOOK_items',
+                expectedStructure: {
+                    operationCount: 3,
+                    operations: ['modify-overwrite-beta', 'shift', 'default'],
+                    hasModifyOverwrite: true,
+                    selectedItemFieldCount: 5
+                }
+            }
+        ];
+        
+        // Mock JOLT generation function (replace with actual logic)
+        function generateJOLT(testCase) {
+            const { requestMapping, hasSessionFields, menuArrayName } = testCase;
+            const jolt = [];
+            
+            // Step 1: Add modify-overwrite-beta if has session fields
+            if (hasSessionFields) {
+                const modifySpec = {
+                    selectedIndex: "=intSubtract(@(1,input.selection),1)",
+                    selectedItem: `=elementAt(@(1,${menuArrayName || 'items_menu_BOOK_items'}),@(1,selectedIndex))`
+                };
+                
+                jolt.push({
+                    operation: "modify-overwrite-beta",
+                    spec: modifySpec
+                });
+            }
+            
+            // Step 2: Shift operation
+            const shiftSpec = { input: {} };
+            
+            if (hasSessionFields) {
+                shiftSpec.selectedItem = {};
+            }
+            
+            requestMapping.forEach(field => {
+                if (field.mappingType === 'dynamic') {
+                    shiftSpec.input[field.storeAttribute] = field.targetPath;
+                } else if (field.mappingType === 'session' && field.storeAttribute.includes('selectedItem.')) {
+                    const fieldName = field.storeAttribute.split('selectedItem.')[1];
+                    shiftSpec.selectedItem[fieldName] = field.targetPath;
+                }
+            });
+            
+            jolt.push({
+                operation: "shift",
+                spec: shiftSpec
+            });
+            
+            // Step 3: Default operation
+            const defaultSpec = {};
+            requestMapping.forEach(field => {
+                if (field.mappingType === 'static') {
+                    defaultSpec[field.targetPath] = field.staticValue;
+                }
+            });
+            
+            jolt.push({
+                operation: "default",
+                spec: defaultSpec
+            });
+            
+            return jolt;
+        }
+        
+        // Validation functions
+        function validateJOLTStructure(jolt, expected) {
+            const results = {
+                passed: true,
+                errors: []
+            };
+            
+            // Check operation count
+            if (jolt.length !== expected.operationCount) {
+                results.passed = false;
+                results.errors.push(`Expected ${expected.operationCount} operations, got ${jolt.length}`);
+            }
+            
+            // Check operation types
+            const operations = jolt.map(op => op.operation);
+            expected.operations.forEach((expectedOp, index) => {
+                if (operations[index] !== expectedOp) {
+                    results.passed = false;
+                    results.errors.push(`Expected operation ${index + 1} to be '${expectedOp}', got '${operations[index]}'`);
+                }
+            });
+            
+            // Check for modify-overwrite-beta
+            const hasModify = operations.includes('modify-overwrite-beta');
+            if (hasModify !== expected.hasModifyOverwrite) {
+                results.passed = false;
+                results.errors.push(`modify-overwrite-beta presence mismatch: expected ${expected.hasModifyOverwrite}, got ${hasModify}`);
+            }
+            
+            // Validate modify-overwrite-beta structure
+            if (expected.hasModifyOverwrite) {
+                const modifyOp = jolt.find(op => op.operation === 'modify-overwrite-beta');
+                if (modifyOp) {
+                    if (!modifyOp.spec.selectedIndex) {
+                        results.passed = false;
+                        results.errors.push('modify-overwrite-beta missing selectedIndex');
+                    }
+                    if (!modifyOp.spec.selectedItem) {
+                        results.passed = false;
+                        results.errors.push('modify-overwrite-beta missing selectedItem');
+                    }
+                    if (modifyOp.spec.selectedIndex !== "=intSubtract(@(1,input.selection),1)") {
+                        results.passed = false;
+                        results.errors.push('Incorrect selectedIndex formula');
+                    }
+                }
+            }
+            
+            // Check shift operation structure
+            const shiftOp = jolt.find(op => op.operation === 'shift');
+            if (shiftOp) {
+                if (expected.hasInputSection && !shiftOp.spec.input) {
+                    results.passed = false;
+                    results.errors.push('shift operation missing input section');
+                }
+                if (expected.hasSelectedItemSection && !shiftOp.spec.selectedItem) {
+                    results.passed = false;
+                    results.errors.push('shift operation missing selectedItem section');
+                }
+                if (expected.selectedItemFieldCount) {
+                    const fieldCount = Object.keys(shiftOp.spec.selectedItem || {}).length;
+                    if (fieldCount !== expected.selectedItemFieldCount) {
+                        results.passed = false;
+                        results.errors.push(`Expected ${expected.selectedItemFieldCount} selectedItem fields, got ${fieldCount}`);
+                    }
+                }
+            }
+            
+            return results;
+        }
+        
+        // Test runner
+        function runTest(testCase) {
+            const startTime = Date.now();
+            
+            try {
+                // Generate JOLT
+                const generatedJOLT = generateJOLT(testCase);
+                
+                // Validate structure
+                const validation = validateJOLTStructure(generatedJOLT, testCase.expectedStructure);
+                
+                const endTime = Date.now();
+                
+                return {
+                    passed: validation.passed,
+                    generatedJOLT,
+                    validation,
+                    executionTime: endTime - startTime,
+                    error: null
+                };
+            } catch (error) {
+                return {
+                    passed: false,
+                    generatedJOLT: null,
+                    validation: { errors: [error.message] },
+                    executionTime: Date.now() - startTime,
+                    error
+                };
+            }
+        }
+        
+        // UI functions
+        function displayTestResult(testCase, result, index) {
+            const testDiv = document.createElement('div');
+            testDiv.className = `test-case ${result.passed ? 'passed' : 'failed'}`;
+            
+            const statusIcon = result.passed ? '✅' : '❌';
+            const statusText = result.passed ? 'PASSED' : 'FAILED';
+            
+            testDiv.innerHTML = `
+                <h3>${statusIcon} Test ${index + 1}: ${testCase.name}</h3>
+                <p><strong>Status:</strong> ${statusText} (${result.executionTime}ms)</p>
+                <p><strong>Description:</strong> ${testCase.description}</p>
+                
+                ${!result.passed ? `
+                    <div style="color: #dc3545;">
+                        <strong>❌ Errors:</strong>
+                        <ul>
+                            ${result.validation.errors.map(error => `<li>${error}</li>`).join('')}
+                        </ul>
+                    </div>
+                ` : ''}
+                
+                <details>
+                    <summary>📋 Generated JOLT Specification</summary>
+                    <div class="code">${JSON.stringify(result.generatedJOLT, null, 2)}</div>
+                </details>
+                
+                <details>
+                    <summary>🔧 Test Configuration</summary>
+                    <div class="code">${JSON.stringify(testCase, null, 2)}</div>
+                </details>
+            `;
+            
+            return testDiv;
+        }
+        
+        function runAllTests() {
+            const resultsContainer = document.getElementById('test-results');
+            const summaryContainer = document.getElementById('test-summary');
+            
+            resultsContainer.innerHTML = '<h2>🧪 Test Results</h2>';
+            
+            let passedTests = 0;
+            const totalTests = TEST_CASES.length;
+            const startTime = Date.now();
+            
+            TEST_CASES.forEach((testCase, index) => {
+                const result = runTest(testCase);
+                if (result.passed) passedTests++;
+                
+                const testElement = displayTestResult(testCase, result, index);
+                resultsContainer.appendChild(testElement);
+            });
+            
+            const endTime = Date.now();
+            const totalTime = endTime - startTime;
+            
+            // Update summary
+            const successRate = Math.round((passedTests / totalTests) * 100);
+            summaryContainer.innerHTML = `
+                <strong>📊 Results:</strong> ${passedTests}/${totalTests} tests passed (${successRate}%)<br>
+                <strong>⏱️ Total time:</strong> ${totalTime}ms<br>
+                <strong>🎯 Status:</strong> ${passedTests === totalTests ? '🎉 ALL TESTS PASSED!' : '⚠️ Some tests failed'}
+            `;
+            
+            // Scroll to results
+            resultsContainer.scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        function clearResults() {
+            document.getElementById('test-results').innerHTML = '';
+            document.getElementById('test-summary').innerHTML = 'Click "Run All Tests" to see results';
+        }
+        
+        function exportTestResults() {
+            const results = TEST_CASES.map(testCase => ({
+                testCase: testCase.name,
+                result: runTest(testCase)
+            }));
+            
+            const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `jolt-test-results-${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        // Auto-run basic test on load
+        window.addEventListener('load', () => {
+            console.log('🧪 JOLT Test Suite loaded');
+            console.log('📋 Available functions: runAllTests(), clearResults(), exportTestResults()');
+        });
+    </script>
+</body>
+</html>

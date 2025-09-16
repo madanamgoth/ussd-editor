@@ -1,5 +1,6 @@
 // Template Manager Utility
-// Handles template file operations like save, load, download, and auto-save
+// Template file operations like save, load, download, and auto-save
+import { createNiFiTemplate } from './TemplateExportHelper.js';
 
 /**
  * Download template as JSON file
@@ -9,7 +10,11 @@
 export const downloadTemplate = (templateData) => {
   try {
     const fileName = `${templateData._id || 'api-template'}-${Date.now()}.json`;
-    const jsonString = JSON.stringify(templateData, null, 2);
+    
+    // Create clean template for NiFi export (remove responseMapping metadata)
+    const cleanTemplate = createNiFiTemplate(templateData);
+    
+    const jsonString = JSON.stringify(cleanTemplate, null, 2);
     
     // Create download link
     const blob = new Blob([jsonString], { type: 'application/json' });
@@ -213,10 +218,13 @@ export const exportAllTemplates = () => {
       };
     }
     
+    // Clean all templates for NiFi export (remove responseMapping metadata)
+    const cleanTemplates = templates.map(template => createNiFiTemplate(template));
+    
     const exportData = {
       exportedAt: new Date().toISOString(),
       version: '1.0',
-      templates: templates
+      templates: cleanTemplates
     };
     
     const fileName = `ussd-api-templates-export-${Date.now()}.json`;

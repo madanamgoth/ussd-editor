@@ -2,6 +2,59 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import './ApiTemplateBuilderEnhanced.css';
 import './TemplateManager.css';
+import './SessionAwareStyles.css';
+import './DataTypeGroupings.css';
+
+// Error Boundary Component
+class TemplateCreatorErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { 
+      hasError: false, 
+      error: null, 
+      errorInfo: null 
+    };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error: error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('TemplateCreator Error Boundary caught an error:', error, errorInfo);
+    this.setState({
+      error: error,
+      errorInfo: errorInfo || { componentStack: 'Component stack not available' }
+    });
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '20px', background: '#f8d7da', color: '#721c24', border: '1px solid #f5c6cb', borderRadius: '5px' }}>
+          <h4>🚨 Template Creator Error</h4>
+          <p>Something went wrong in the template creator. This is likely due to invalid session data.</p>
+          <details style={{ marginTop: '10px' }}>
+            <summary>Error Details</summary>
+            <pre style={{ marginTop: '10px', fontSize: '12px' }}>
+              {this.state.error && this.state.error.toString()}
+              <br />
+              {this.state.errorInfo && this.state.errorInfo.componentStack}
+            </pre>
+          </details>
+          <button 
+            onClick={() => this.setState({ hasError: false, error: null, errorInfo: null })}
+            style={{ marginTop: '10px', padding: '5px 10px', background: '#007bff', color: 'white', border: 'none', borderRadius: '3px' }}
+          >
+            Try Again
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 import { 
   generateResponseJolt, 
   generateErrorJolt, 
@@ -16,7 +69,90 @@ import {
   loadTemplateFromFile
 } from '../utils/TemplateManager.js';
 
-const TemplateCreator = ({ onClose, onCreate, availableVariables = [] }) => {
+const TemplateCreator = ({ onClose, onCreate, availableVariables = [], availableVariablesByTemplate = {}, nextNodeInfo = null }) => {
+  // Safe render helper to prevent object rendering
+  const safeRender = (value) => {
+    console.log('🔍 safeRender called with:', value, 'type:', typeof value);
+    if (value === null || value === undefined) {
+      console.log('✅ safeRender: null/undefined → empty string');
+      return '';
+    }
+    if (typeof value === 'object') {
+      console.error('🚨 OBJECT DETECTED in safeRender:', value, 'keys:', Object.keys(value), 'stack:', new Error().stack);
+      if (Array.isArray(value)) {
+        console.log('✅ safeRender: array → joined string');
+        return value.join(', ');
+      }
+      if (Object.keys(value).length === 0) {
+        console.log('✅ safeRender: empty object → empty string');
+        return ''; // Handle empty objects
+      }
+      console.log('✅ safeRender: object → JSON string');
+      return JSON.stringify(value);
+    }
+    console.log('✅ safeRender: primitive → string');
+    return String(value);
+  };
+
+  // Add debugging and safety checks
+  console.log('TemplateCreator props:', { 
+    availableVariables: availableVariables, 
+    availableVariablesType: typeof availableVariables,
+    availableVariablesIsArray: Array.isArray(availableVariables),
+    availableVariablesLength: Array.isArray(availableVariables) ? availableVariables.length : 'N/A',
+    nextNodeInfo, 
+    onClose: typeof onClose, 
+    onCreate: typeof onCreate 
+  });
+
+  // Ensure availableVariables is always an array of strings
+  const safeAvailableVariables = React.useMemo(() => {
+    try {
+      if (!Array.isArray(availableVariables)) {
+        console.warn('availableVariables is not an array:', availableVariables);
+        return [];
+      }
+      
+      console.log('Processing availableVariables:', availableVariables);
+      
+      const processed = availableVariables
+        .filter(variable => {
+          // Filter out null, undefined, and invalid values
+          if (variable === null || variable === undefined) {
+            console.log('Filtering out null/undefined variable');
+            return false;
+          }
+          
+          // If it's an object, check if it has meaningful properties
+          if (typeof variable === 'object') {
+            if (Object.keys(variable).length === 0) {
+              console.warn('Filtering out empty object from availableVariables:', variable);
+              return false;
+            }
+            // For objects, try to extract a string representation
+            return variable.name || variable.id || variable.key || false;
+          }
+          
+          // Keep strings and numbers
+          return typeof variable === 'string' || typeof variable === 'number';
+        })
+        .map(variable => {
+          // Convert everything to string safely
+          if (typeof variable === 'object' && variable !== null) {
+            return variable.name || variable.id || variable.key || JSON.stringify(variable);
+          }
+          return String(variable);
+        })
+        .filter(str => str && str.trim().length > 0); // Remove empty strings
+      
+      console.log('Processed safeAvailableVariables:', processed);
+      return processed;
+    } catch (error) {
+      console.error('Error processing availableVariables:', error);
+      return [];
+    }
+  }, [availableVariables]);
+
   // Add body class to prevent scrolling and ensure full screen
   useEffect(() => {
     // Force full screen coverage by modifying body
@@ -71,6 +207,33 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [] }) => {
   });
   const [staticFields, setStaticFields] = useState({});
 
+  // Dynamic Menu specific state
+  const [isDynamicMenuNext, setIsDynamicMenuNext] = useState(false);
+  const [arrayPreview, setArrayPreview] = useState(null);
+  const [selectedArrayConfig, setSelectedArrayConfig] = useState({
+    selectedArray: null,
+    displayKey: '',
+    valueKey: '',
+    sessionVariable: '',
+    customSessionName: ''
+  });
+  const [arrayAnalysis, setArrayAnalysis] = useState({
+    detectedArrays: [],
+    selectedArray: null,
+    arrayType: null,
+    possibleKeys: [],
+    selectedDisplayKey: '',
+    selectedIdKey: '',
+    menuPreview: []
+  });
+
+  // Check if next node is Dynamic Menu
+  useEffect(() => {
+    if (nextNodeInfo && nextNodeInfo.type === 'DYNAMIC-MENU') {
+      setIsDynamicMenuNext(true);
+    }
+  }, [nextNodeInfo]);
+
   // JOLT validation and preview function
   const validateAndPreviewJolt = async (joltSpec, inputData, mappingType) => {
     const result = validateJoltSpec(joltSpec, inputData, mappingType);
@@ -78,6 +241,226 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [] }) => {
       preview: result.result, 
       error: result.error 
     };
+  };
+
+  // Array Analysis Functions for Dynamic Menu
+  const analyzeArraysInResponse = (responseObj) => {
+    const arrays = [];
+    
+    const findArrays = (obj, path = '') => {
+      if (Array.isArray(obj)) {
+        const arrayInfo = {
+          path: path,
+          size: obj.length,
+          type: determineArrayType(obj),
+          sampleData: obj.slice(0, 5), // First 5 items as sample for preview
+          sampleKeys: obj.length > 0 ? extractKeysFromArrayItems(obj) : []
+        };
+        arrays.push(arrayInfo);
+      } else if (obj && typeof obj === 'object') {
+        Object.keys(obj).forEach(key => {
+          const newPath = path ? `${path}.${key}` : key;
+          findArrays(obj[key], newPath);
+        });
+      }
+    };
+    
+    findArrays(responseObj);
+    return arrays;
+  };
+
+  const determineArrayType = (array) => {
+    if (array.length === 0) return 'empty';
+    
+    const firstItem = array[0];
+    const allSameType = array.every(item => typeof item === typeof firstItem);
+    
+    if (allSameType) {
+      if (typeof firstItem === 'string') return 'strings';
+      if (typeof firstItem === 'number') return 'numbers';
+      if (typeof firstItem === 'boolean') return 'booleans';
+      if (firstItem === null) return 'nulls';
+      if (typeof firstItem === 'object' && !Array.isArray(firstItem)) return 'objects';
+      if (Array.isArray(firstItem)) return 'arrays';
+    }
+    
+    return 'mixed';
+  };
+
+  const extractKeysFromArrayItems = (array) => {
+    const keys = new Set();
+    
+    array.forEach(item => {
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
+        Object.keys(item).forEach(key => keys.add(key));
+      }
+    });
+    
+    return Array.from(keys);
+  };
+
+  // Generate smart session variable names based on array path
+  const generateSmartSessionName = (arrayPath) => {
+    const commonMappings = {
+      'data': 'items_menu',
+      'items': 'items_menu', 
+      'products': 'products_menu',
+      'books': 'books_menu',
+      'accounts': 'accounts_menu',
+      'users': 'users_menu',
+      'categories': 'categories_menu',
+      'orders': 'orders_menu',
+      'transactions': 'transactions_menu',
+      'chapters': 'chapters_menu',
+      'locations': 'locations_menu',
+      'services': 'services_menu',
+      'results': 'results_menu'
+    };
+    
+    // Clean path and get meaningful name
+    const cleanPath = arrayPath.toLowerCase().replace(/\./g, '_');
+    
+    // Check if we have a specific mapping
+    if (commonMappings[cleanPath]) {
+      return commonMappings[cleanPath];
+    }
+    
+    // For nested paths like "response.data", use the last meaningful part
+    const pathParts = cleanPath.split('_');
+    const meaningfulPart = pathParts[pathParts.length - 1];
+    
+    if (commonMappings[meaningfulPart]) {
+      return commonMappings[meaningfulPart];
+    }
+    
+    // Default: use the path with _menu suffix
+    return `${cleanPath}_menu`;
+  };
+
+  // Extract session variables from cURL command
+  const extractSessionVariables = (curlCommand) => {
+    try {
+      const regex = /\{\{([^}]+)\}\}/g;
+      const variables = [];
+      let match;
+      
+      while ((match = regex.exec(curlCommand)) !== null) {
+        if (!variables.includes(match[1])) {
+          variables.push(match[1]);
+        }
+      }
+      
+      return variables;
+    } catch (error) {
+      console.error('Error extracting session variables:', error);
+      return [];
+    }
+  };
+
+  // Get description for session variables
+  const getVariableDescription = (variable) => {
+    try {
+      const descriptions = {
+        'PIN': 'User entered PIN from input node',
+        'sessionId': 'Unique session identifier',
+        'userId': 'User ID from authentication',
+        'selectedBook.title': 'Title of book selected from dynamic menu',
+        'selectedBook.author': 'Author of selected book',
+        'selectedBook.year': 'Publication year of selected book',
+        'selectedProduct.id': 'ID of selected product',
+        'selectedProduct.name': 'Name of selected product',
+        'selectedProduct.price': 'Price of selected product',
+        'selectedItem.id': 'ID of selected item from dynamic menu',
+        'selectedItem.name': 'Name of selected item from dynamic menu',
+        'selectedIndex': 'Index (0,1,2...) of user selection',
+        'authToken': 'Authentication token from login',
+        'customerEmail': 'Customer email from session',
+        'customerPhone': 'Customer phone from session'
+      };
+      
+      // Check for exact match first
+      if (descriptions[variable]) {
+        return descriptions[variable];
+      }
+      
+      // Check for patterns
+      if (variable.startsWith('selected')) {
+        return 'Data from user\'s dynamic menu selection';
+      }
+      if (variable.includes('_menu_')) {
+        return 'Data from dynamic menu array';
+      }
+      if (variable.toLowerCase().includes('token')) {
+        return 'Authentication or authorization token';
+      }
+      if (variable.toLowerCase().includes('id')) {
+        return 'Identifier value from session';
+      }
+      
+      return 'Session variable (will be replaced at runtime)';
+    } catch (error) {
+      console.error('Error getting variable description:', error);
+      return 'Session variable';
+    }
+  };
+
+  const generateMenuPreview = (array, displayKey, idKey = null) => {
+    if (!array || array.length === 0) return [];
+    
+    return array.slice(0, 10).map((item, index) => {
+      let displayText, idValue;
+      
+      if (typeof item === 'string' || typeof item === 'number') {
+        displayText = String(item);
+        idValue = String(item);
+      } else if (item && typeof item === 'object') {
+        displayText = displayKey ? (item[displayKey] || String(item)) : String(item);
+        idValue = idKey ? (item[idKey] || displayText) : displayText;
+      } else {
+        displayText = String(item);
+        idValue = String(item);
+      }
+      
+      return {
+        option: index + 1,
+        display: displayText,
+        id: idValue,
+        fullItem: item
+      };
+    });
+  };
+
+  const handleResponseSamplePaste = (sampleResponse) => {
+    if (isDynamicMenuNext) {
+      try {
+        const parsed = JSON.parse(sampleResponse);
+        const detectedArrays = analyzeArraysInResponse(parsed);
+        
+        setArrayAnalysis(prev => ({
+          ...prev,
+          detectedArrays: detectedArrays
+        }));
+        
+        // Auto-select first array if only one found
+        if (detectedArrays.length === 1) {
+          handleArraySelection(detectedArrays[0]);
+        }
+      } catch (error) {
+        console.log('Could not parse response for array analysis:', error);
+      }
+    }
+  };
+
+  const handleArraySelection = (arrayInfo) => {
+    setArrayAnalysis(prev => ({
+      ...prev,
+      selectedArray: arrayInfo,
+      arrayType: arrayInfo.type,
+      possibleKeys: arrayInfo.possibleKeys,
+      selectedDisplayKey: arrayInfo.possibleKeys.length > 0 ? arrayInfo.possibleKeys[0] : '',
+      selectedIdKey: arrayInfo.possibleKeys.length > 1 ? arrayInfo.possibleKeys[1] : arrayInfo.possibleKeys[0] || '',
+      menuPreview: generateMenuPreview(arrayInfo.sample, arrayInfo.possibleKeys[0], arrayInfo.possibleKeys[1])
+    }));
   };
 
   // Extract fields from nested object - IMPROVED VERSION FROM EXAMPLE
@@ -390,8 +773,41 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [] }) => {
       console.log('✅ Parsed Raw Response:', rawResponse);
       console.log('✅ Parsed Desired Output:', desiredOutput);
       
-      // Use Enhanced JOLT Generator
-      const result = generateResponseJolt(rawResponse, desiredOutput);
+      // If next node is dynamic menu, enhance the desired output with array data
+      let enhancedDesiredOutput = { ...desiredOutput };
+      if (isDynamicMenuNext && selectedArrayConfig.selectedArray !== null) {
+        console.log('🔍 Dynamic menu detected with selected configuration:', selectedArrayConfig);
+        const detectedArrays = analyzeArraysInResponse(rawResponse);
+        
+        if (detectedArrays.length > 0 && selectedArrayConfig.selectedArray < detectedArrays.length) {
+          const selectedArray = detectedArrays[selectedArrayConfig.selectedArray];
+          const sessionVarName = selectedArrayConfig.customSessionName || selectedArrayConfig.sessionVariable;
+          
+          console.log('📋 Selected array for dynamic menu:', selectedArray);
+          console.log('⚙️ Configuration:', selectedArrayConfig);
+          
+          // Add the selected array configuration to session data
+          enhancedDesiredOutput.dynamicMenuData = {
+            [sessionVarName]: selectedArray.path,
+            [`${sessionVarName}_meta`]: {
+              type: selectedArray.type,
+              sampleKeys: selectedArray.sampleKeys,
+              size: selectedArray.size,
+              displayKey: selectedArrayConfig.displayKey,
+              valueKey: selectedArrayConfig.valueKey,
+              sessionVariable: sessionVarName
+            }
+          };
+          
+          console.log('📋 Enhanced desired output with selected dynamic menu data:', enhancedDesiredOutput);
+        }
+      }
+      
+      // Use Enhanced JOLT Generator with raw response for dynamic menu support
+      const result = generateResponseJolt(rawResponse, enhancedDesiredOutput, {
+        isDynamicMenuNext: isDynamicMenuNext,
+        originalResponse: rawResponse
+      });
       
       setResponseMapping(prev => ({
         ...prev,
@@ -456,6 +872,217 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [] }) => {
         joltError: error.message
       }));
     }
+  };
+
+  // Generate session-aware JOLT specifications for menu selection
+  const generateSessionAwareJoltSpecs = () => {
+    console.log('🎯 Generating session-aware JOLT specs for menu selection...');
+    console.log('🔍 Available variables:', safeAvailableVariables);
+    console.log('🔍 Selected array config:', selectedArrayConfig);
+    console.log('🔍 Array preview state:', arrayPreview);
+    
+    // First, try to use the previously configured array from selectedArrayConfig
+    let menuArrayName = null;
+    
+    if (selectedArrayConfig.selectedArray !== null && arrayPreview?.detectedArrays?.length > 0) {
+      // Use the array that was previously selected and configured
+      const selectedArrayIndex = selectedArrayConfig.selectedArray;
+      if (selectedArrayIndex < arrayPreview.detectedArrays.length) {
+        menuArrayName = selectedArrayConfig.customSessionName || selectedArrayConfig.sessionVariable;
+        console.log('✅ Using previously configured array:', menuArrayName);
+        console.log('📋 Array config details:', {
+          index: selectedArrayIndex,
+          sessionVariable: selectedArrayConfig.sessionVariable,
+          customName: selectedArrayConfig.customSessionName,
+          displayKey: selectedArrayConfig.displayKey,
+          valueKey: selectedArrayConfig.valueKey
+        });
+      }
+    }
+    
+    // Fallback: try to detect menu arrays from session variables with smart grouping
+    if (!menuArrayName) {
+      console.log('🔍 No configured array found, attempting pattern detection...');
+      
+      // Group related variables by their base name (e.g., items_menu_for_APICALL_ONE)
+      const menuGroups = {};
+      safeAvailableVariables.forEach(variable => {
+        // Look for menu-related patterns
+        if (variable.includes('menu') && 
+            (variable.includes('items') || variable.includes('_menu_') || variable.includes('menu_for_'))) {
+          
+          // Extract base name by removing suffixes like _items, _menu_raw, _values
+          let baseName = variable;
+          [/_items$/, /_menu_raw$/, /_values$/, /_data$/, /_list$/].forEach(suffix => {
+            baseName = baseName.replace(suffix, '');
+          });
+          
+          if (!menuGroups[baseName]) {
+            menuGroups[baseName] = [];
+          }
+          menuGroups[baseName].push(variable);
+        }
+      });
+      
+      console.log('📋 Detected menu groups:', menuGroups);
+      
+      // Choose the group with the most complete set of variables
+      const bestGroup = Object.entries(menuGroups)
+        .sort(([,a], [,b]) => b.length - a.length)[0];
+      
+      if (bestGroup) {
+        const [baseName, variables] = bestGroup;
+        // Prefer the main items array, then any array-like variable
+        menuArrayName = variables.find(v => v.endsWith('_items')) ||
+                       variables.find(v => v.includes('items')) ||
+                       variables[0];
+        
+        console.log('✅ Selected from group detection:', {
+          baseName,
+          availableVariables: variables,
+          selectedArray: menuArrayName
+        });
+      }
+    }
+    
+    if (!menuArrayName) {
+      console.warn('⚠️ No menu arrays found in configuration or session variables');
+      console.log('⚠️ Available variables:', safeAvailableVariables);
+      console.log('⚠️ Array config:', selectedArrayConfig);
+      alert('⚠️ No dynamic menu array configuration found. Please configure an array in Step 2 first, or ensure your session variables contain menu data.');
+      return generateJoltSpecs();
+    }
+    
+    console.log('🎯 Final menu array name:', menuArrayName);
+    
+    // Create session-aware request template
+    const sessionAwareRequestJolt = [];
+    
+    // Check if any fields need session data from selected items (support both generic and API-specific)
+    const hasSessionFields = requestMapping.some(field => 
+      field.mappingType === 'session' && field.storeAttribute && 
+      (field.storeAttribute.includes('selectedItem.') || field.storeAttribute.includes('_selectedItem.'))
+    );
+    
+    console.log('🔍 Has session fields:', hasSessionFields);
+    console.log('🔍 Request mapping:', requestMapping.map(f => ({
+      path: f.path,
+      mappingType: f.mappingType,
+      storeAttribute: f.storeAttribute
+    })));
+    
+    if (hasSessionFields) {
+      console.log('✅ Found session fields, adding modify-overwrite-beta operation');
+      
+      // Step 1: modify-overwrite-beta to extract selected item data
+      const modifySpec = {};
+      
+      // Calculate selectedIndex from user selection (1,2,3... → 0,1,2...)
+      modifySpec.selectedIndex = "=intSubtract(@(1,input.selection),1)";
+      
+      // Extract the selected item from the menu array
+      modifySpec.selectedItem = `=elementAt(@(1,${menuArrayName}),@(1,selectedIndex))`;
+      
+      console.log('🎯 Generated modify spec:', modifySpec);
+      
+      sessionAwareRequestJolt.push({
+        operation: "modify-overwrite-beta",
+        spec: modifySpec
+      });
+    } else {
+      console.warn('⚠️ No session fields found that use selectedItem.* pattern');
+      console.log('⚠️ Field mappings:', requestMapping.map(f => `${f.path}: ${f.mappingType} → ${f.storeAttribute}`));
+    }
+    
+    // Step 2: shift operation for final field mapping
+    const requestShiftSpec = {
+      input: {}
+    };
+    const requestDefaultSpec = {};
+    
+    requestMapping.forEach(field => {
+      if (field.mappingType === 'dynamic' && field.storeAttribute) {
+        // Regular dynamic fields from input
+        setNestedValue(requestShiftSpec.input, field.storeAttribute, field.targetPath || field.path);
+        console.log(`✅ Dynamic field: input.${field.storeAttribute} → ${field.targetPath || field.path}`);
+      } else if (field.mappingType === 'session' && field.storeAttribute && 
+                 field.storeAttribute.includes('selectedItem.')) {
+        // Session fields from selected items - map directly from selectedItem
+        const parts = field.storeAttribute.split('selectedItem.');
+        if (parts.length >= 2) {
+          const fieldName = parts[1]; // e.g., 'title', 'year', 'author'
+          const targetPath = field.targetPath || field.path; // e.g., 'profileDetails.authProfile'
+          
+          // Map selectedItem.fieldName directly to target path
+          setNestedValue(requestShiftSpec, `selectedItem.${fieldName}`, targetPath);
+          console.log(`✅ Session field: selectedItem.${fieldName} → ${targetPath}`);
+        }
+      } else if (field.mappingType === 'static' && field.category !== 'header') {
+        // Static fields
+        setNestedValue(requestDefaultSpec, field.targetPath || field.path, field.staticValue || field.value);
+        console.log(`✅ Static field: ${field.targetPath || field.path} = ${field.staticValue || field.value}`);
+      }
+    });
+    
+    // Additional static fields
+    Object.keys(staticFields).forEach(path => {
+      setNestedValue(requestDefaultSpec, path, staticFields[path]);
+    });
+    
+    sessionAwareRequestJolt.push({
+      operation: "shift",
+      spec: requestShiftSpec
+    });
+    
+    sessionAwareRequestJolt.push({
+      operation: "default",
+      spec: requestDefaultSpec
+    });
+    
+    console.log('🎯 Generated session-aware request JOLT:', sessionAwareRequestJolt);
+    
+    // Use standard response and error mappings
+    const responseJolt = responseMapping.generated || [
+      {
+        operation: "shift",
+        spec: { input: {} }
+      },
+      {
+        operation: "default",
+        spec: {
+          success: true,
+          timestamp: new Date().toISOString(),
+          status: "SUCCEEDED"
+        }
+      }
+    ];
+
+    const errorJolt = errorMapping.generated || [
+      {
+        operation: "shift",
+        spec: { input: {} }
+      },
+      {
+        operation: "default",
+        spec: {
+          success: false,
+          error: true,
+          timestamp: new Date().toISOString(),
+          status: "FAILED",
+          errorCode: "UNKNOWN_ERROR",
+          errorMessage: "An error occurred"
+        }
+      }
+    ];
+
+    setTemplateData(prev => ({
+      ...prev,
+      requestTemplate: { joltSpec: sessionAwareRequestJolt },
+      responseTemplate: { joltSpec: responseJolt },
+      responseErrorTemplate: { joltSpec: errorJolt }
+    }));
+
+    setStep(4);
   };
 
   // Generate JOLT specifications
@@ -536,7 +1163,10 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [] }) => {
     setTemplateData(prev => ({
       ...prev,
       requestTemplate: { joltSpec: requestJolt },
-      responseTemplate: { joltSpec: responseJolt },
+      responseTemplate: { 
+        joltSpec: responseJolt,
+        responseMapping: responseMapping // GRAPH METADATA: Saved for field extraction, NOT exported to NiFi
+      },
       responseErrorTemplate: { joltSpec: errorJolt }
     }));
 
@@ -594,22 +1224,85 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [] }) => {
     input.click();
   };
 
-  const renderStep1 = () => (
-    <div className="step-content">
-      <div className="step-header">
-        <h3>🔥 Step 1: Parse cURL Command</h3>
-        <p className="step-description">Paste your cURL command below to extract API details. Supports ALL RESTful methods with unlimited fields!</p>
+  const renderStep1 = () => {
+    try {
+      console.log('🔍 renderStep1 executing...');
+      
+      // Split the rendering into safe chunks
+      const renderExamples = () => {
+        try {
+          console.log('🔍 Rendering examples section...');
+          return (
+            <div className="dynamic-examples">
+              <h4>🚀 Dynamic Session Examples:</h4>
+              <div className="example-tabs">
+                <details className="example-detail">
+                  <summary>📖 Example: Book Details API (After Menu Selection)</summary>
+                  <div className="example-content">
+                    <p><strong>Flow:</strong> PIN → Get Books → Select Book → Get Book Details</p>
+                    <pre>{`curl -X POST "https://api.bookstore.com/book-details" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "title": "{{selectedBook.title}}",
+    "author": "{{selectedBook.author}}",
+    "year": "{{selectedBook.year}}",
+    "userPin": "{{PIN}}"
+  }'`}</pre>
+                    <p><small>{safeRender("💡 The {{}} placeholders will be replaced with actual session data")}</small></p>
+                  </div>
+                </details>
+                
+                <details className="example-detail">
+                  <summary>🛒 Example: Add to Cart (After Product Selection)</summary>
+                  <div className="example-content">
+                    <p><strong>Flow:</strong> PIN → Get Products → Select Product → Add to Cart</p>
+                    <pre>{`curl -X POST "https://api.shop.com/cart/add" \\
+  -H "Authorization: Bearer {{authToken}}" \\
+  -d '{
+    "productId": "{{selectedProduct.id}}",
+    "productName": "{{selectedProduct.name}}",
+    "quantity": 1,
+    "userId": "{{userId}}",
+    "sessionId": "{{sessionId}}"
+  }'`}</pre>
+                  </div>
+                </details>
+                
+                <details className="example-detail">
+                  <summary>💰 Example: Get Price (Dynamic Data)</summary>
+                  <div className="example-content">
+                    <p><strong>Flow:</strong> Categories → Products → Select Product → Get Live Price</p>
+                    <pre>{`curl -X GET "https://api.pricing.com/price?id={{selectedItem.productId}}&user={{PIN}}" \\
+  -H "X-Session-ID: {{sessionId}}" \\
+  -H "Content-Type: application/json"`}</pre>
+                  </div>
+                </details>
+              </div>
+            </div>
+          );
+        } catch (error) {
+          console.error('🚨 Error in renderExamples:', error);
+          return <div>Error rendering examples</div>;
+        }
+      };
+    return (
+      <div className="step-content">
+        <div className="step-header">
+        <h3>🔥 Step 1: Parse cURL Command & Configure Session Data</h3>
+        <p className="step-description">Paste your cURL command below to extract API details. Supports dynamic session-based API calls for multi-step USSD flows!</p>
       </div>
       
       <div className="curl-input-section">
         <div className="input-help">
           <h4>📋 Supported Formats:</h4>
           <ul>
-            <li>✅ <strong>Postman Export:</strong> GET, POST, PUT, DELETE, PATCH</li>
-            <li>✅ <strong>Terminal cURL:</strong> All HTTP methods with -X, -H, -d flags</li>
-            <li>✅ <strong>Unlimited Fields:</strong> Headers, query params, nested JSON objects</li>
-            <li>✅ <strong>Complex Data:</strong> Arrays, nested objects, authentication</li>
+            <li>✅ <strong>Static API Calls:</strong> GET, POST, PUT, DELETE, PATCH with fixed data</li>
+            <li>✅ <strong>Dynamic API Calls:</strong> Use session data from previous menu selections</li>
+            <li>✅ <strong>Session Variables:</strong> Reference user selections, PIN, menu choices</li>
+            <li>✅ <strong>Complex Flows:</strong> Chain multiple APIs with dynamic data</li>
           </ul>
+          
+          {renderExamples()}
         </div>
         
         <textarea
@@ -643,6 +1336,178 @@ curl -X PUT 'http://api.example.com/endpoint' \\
         />
       </div>
       
+      {/* Session Variable Detection - Temporarily Disabled for Debugging */}
+      {false && curlInput && curlInput.includes('{{') && (
+        <div className="session-variables-section">
+          <h4>🔧 Detected Session Variables</h4>
+          <p>Found placeholders in your cURL command that will be replaced with session data:</p>
+          <div className="detected-variables">
+            {Array.isArray(extractSessionVariables(curlInput)) && extractSessionVariables(curlInput).length > 0 ? (
+              extractSessionVariables(curlInput).map((variable, index) => (
+                <div key={index} className="variable-item">
+                  <span className="variable-name">{"{{" + safeRender(variable) + "}}"}</span>
+                  <span className="variable-description">
+                    {safeRender(getVariableDescription(safeRender(variable)))}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="variable-item">
+                <span className="variable-description">No valid session variables detected</span>
+              </div>
+            )}
+          </div>
+          <div className="session-info">
+            <small>
+              💡 <strong>How it works:</strong> These placeholders will be automatically replaced with actual values from your USSD session when the API is called.
+              <br />
+              🔄 <strong>Examples:</strong> <code>{"{{selectedBook.title}}"}</code> → "The Hitchhiker's Guide to the Galaxy", <code>{"{{PIN}}"}</code> → "123456"
+            </small>
+          </div>
+        </div>
+      )}
+      
+      {/* Session Data Configuration */}
+      <div className="session-data-config">
+        <h4>🔗 Configure Session Data from Previous APIs</h4>
+        <p>Select data from previous API responses to use in this new API call</p>
+        
+        <div className="session-config-grid">
+          <div className="available-session-data">
+            <h5>📥 Available Session Data:</h5>
+            <div className="session-data-list">
+              {(() => {
+                console.log('🔍 Rendering session data list, safeAvailableVariables:', safeAvailableVariables);
+                console.log('🔍 safeAvailableVariables type:', typeof safeAvailableVariables);
+                console.log('🔍 safeAvailableVariables isArray:', Array.isArray(safeAvailableVariables));
+                
+                if (safeAvailableVariables && Array.isArray(safeAvailableVariables) && safeAvailableVariables.length > 0) {
+                  console.log('🔍 Rendering variables:', safeAvailableVariables);
+                  return safeAvailableVariables
+                    .filter(variable => {
+                      console.log('🔍 Filtering variable:', variable, 'type:', typeof variable);
+                      return variable !== null && variable !== undefined;
+                    })
+                    .map((variable, index) => {
+                      console.log('🔍 Mapping variable:', variable, 'index:', index);
+                      const sessionVar = safeRender("{{" + safeRender(variable) + "}}");
+                      console.log('🔍 Generated sessionVar:', sessionVar);
+                      
+                      return (
+                        <div key={`session-var-${index}`} className="session-data-item">
+                          <span className="session-variable">{sessionVar}</span>
+                          <span className="session-description">{safeRender("User input variable")}</span>
+                        </div>
+                      );
+                    });
+                } else {
+                  console.log('🔍 Rendering no-session-data fallback');
+                  return (
+                    <div className="no-session-data">
+                      <span>{safeRender("No session variables available yet")}</span>
+                      <small>{safeRender("Add Action nodes with API calls to create session data")}</small>
+                    </div>
+                  );
+                }
+              })()}
+              
+              {/* Common session variables */}
+              <div className="session-data-item">
+                <span className="session-variable">{"{{PIN}}"}</span>
+                <span className="session-description">User's PIN input</span>
+              </div>
+              <div className="session-data-item">
+                <span className="session-variable">{"{{selection}}"}</span>
+                <span className="session-description">User's menu selection</span>
+              </div>
+              <div className="session-data-item">
+                <span className="session-variable">{"{{selectedItem.id}}"}</span>
+                <span className="session-description">ID from selected menu item</span>
+              </div>
+              <div className="session-data-item">
+                <span className="session-variable">{"{{selectedItem.name}}"}</span>
+                <span className="session-description">Name from selected menu item</span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="session-usage-guide">
+            <h5>💡 How to Use Session Data:</h5>
+            <ol>
+              <li><strong>Copy the variable name</strong> from the left (e.g., {"{{selectedItem.id}}"})</li>
+              <li><strong>Paste it in your cURL</strong> where you need dynamic data</li>
+              <li><strong>The system will replace</strong> {"{{variable}}"} with actual session values</li>
+            </ol>
+            
+            <div className="session-examples">
+              <h6>🚀 Example Usage:</h6>
+              <code>
+                "bookId": "{"{{selectedBook.id}}"}"<br/>
+                "userId": "{"{{PIN}}"}"<br/>
+                "amount": "{"{{userInput}}"}"
+              </code>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Flow Planning Section - NEW */}
+      <div className="flow-planning-section">
+        <h4>🎯 Dynamic USSD Flow Planning</h4>
+        <p>Plan your complete dynamic flow with session data management:</p>
+        
+        <div className="flow-steps">
+          <div className="flow-step">
+            <h5>📍 Your Current Step:</h5>
+            <div className="current-step-indicator">
+              <strong>Action Node</strong> - Creating API Template with Session Data Support
+            </div>
+          </div>
+          
+          <div className="flow-visualization">
+            <h5>🔄 Complete Flow Example:</h5>
+            <div className="flow-diagram">
+              <div className="flow-node start">Start Node</div>
+              <div className="flow-arrow">→</div>
+              <div className="flow-node input">Input Node<br/><small>(PIN/ID)</small></div>
+              <div className="flow-arrow">→</div>
+              <div className="flow-node action active">Action Node<br/><small>(Current - API Call)</small></div>
+              <div className="flow-arrow">→</div>
+              <div className="flow-node dynamic">Dynamic Menu<br/><small>(From API Response)</small></div>
+              <div className="flow-arrow">→</div>
+              <div className="flow-node action">Action Node<br/><small>(Using Selected Data)</small></div>
+            </div>
+          </div>
+          
+          <div className="session-data-flow">
+            <h5>💾 Session Data Strategy:</h5>
+            <div className="session-strategy">
+              <div className="strategy-item">
+                <span className="strategy-icon">🔑</span>
+                <div className="strategy-content">
+                  <strong>Store API Response:</strong> Save data from this API call for next nodes
+                  <br/><small>Example: Save user details, account info, product list</small>
+                </div>
+              </div>
+              <div className="strategy-item">
+                <span className="strategy-icon">📋</span>
+                <div className="strategy-content">
+                  <strong>Dynamic Menu Creation:</strong> Use stored data to populate menu options
+                  <br/><small>Example: Show available books, products, or accounts</small>
+                </div>
+              </div>
+              <div className="strategy-item">
+                <span className="strategy-icon">🎯</span>
+                <div className="strategy-content">
+                  <strong>Selection Usage:</strong> Use selected menu item in next API call
+                  <br/><small>Example: Get book details using selected book ID</small>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
       <div className="step-actions">
         <button onClick={parseCurlCommand} className="btn primary parse-btn">
           🚀 Parse cURL Command & Extract Fields
@@ -650,6 +1515,19 @@ curl -X PUT 'http://api.example.com/endpoint' \\
       </div>
     </div>
   );
+  } catch (error) {
+    console.error('🚨 Error in renderStep1:', error);
+    return (
+      <div className="step-content">
+        <h3>🔥 Step 1: Parse cURL Command & Configure Session Data</h3>
+        <div className="error-message">
+          <p>An error occurred in Step 1. Please check the console for details.</p>
+          <button onClick={() => window.location.reload()} className="btn primary">Reload Page</button>
+        </div>
+      </div>
+    );
+  }
+};
 
   const renderStep2 = () => {
     console.log('Rendering Step 2, requestMapping:', requestMapping);
@@ -659,7 +1537,7 @@ curl -X PUT 'http://api.example.com/endpoint' \\
       'pin', 'amount', 'recipient', 'phone', 'accountNumber', 'userInput', 'selection',
       'customerPin', 'requestId', 'bankCode', 'transactionType', 'customerId',
       'merchantReference', 'currencyCode', 'orderNumber', 'customerName', 'customerEmail', 'customerPhone',
-      ...availableVariables
+      ...safeAvailableVariables.map(String) // Ensure all variables are strings
     ];
     
     // If no fields were extracted, show helpful message
@@ -708,7 +1586,36 @@ curl -X PUT 'http://api.example.com/endpoint' \\
     return (
       <div className="step-content">
         <h3>Step 2: Configure Request Parameters</h3>
-        <p>All fields extracted from your cURL command. Select which are static vs dynamic:</p>
+        <p>All fields extracted from your cURL command. Choose data source for each field:</p>
+        
+        {/* Data Source Guide */}
+        <div className="data-source-guide">
+          <h4>📊 Choose Your Data Source:</h4>
+          <div className="data-source-options">
+            <div className="data-option">
+              <span className="option-icon">📌</span>
+              <div className="option-content">
+                <strong>Static Data:</strong> Fixed values that never change
+                <br/><small>Example: API keys, app version, constant URLs</small>
+              </div>
+            </div>
+            <div className="data-option">
+              <span className="option-icon">✏️</span>
+              <div className="option-content">
+                <strong>Input Variables:</strong> Data from current user input
+                <br/><small>Example: PIN, amount, phone number entered by user</small>
+              </div>
+            </div>
+            <div className="data-option">
+              <span className="option-icon">💾</span>
+              <div className="option-content">
+                <strong>Session Data:</strong> Data from previous API calls
+                <br/><small>Example: Selected book ID, user account details, previous responses</small>
+              </div>
+            </div>
+          </div>
+        </div>
+        
         <div className="fields-summary">
           <strong>Total fields found: {requestMapping.length}</strong>
         </div>
@@ -727,74 +1634,444 @@ curl -X PUT 'http://api.example.com/endpoint' \\
                 return (
                   <div key={field.path} className="field-row">
                     <div className="field-info">
-                      <strong>{field.path}</strong>
-                      <span className="field-type">({field.type})</span>
-                      <div className="field-value">{String(field.value)}</div>
+                      <strong>{safeRender(field.path)}</strong>
+                      <span className="field-type">({safeRender(field.type)})</span>
+                      <div className="field-value">{
+                        (() => {
+                          try {
+                            const value = field.value;
+                            if (value === null || value === undefined) return 'null';
+                            if (typeof value === 'object') return JSON.stringify(value);
+                            return String(value);
+                          } catch (error) {
+                            console.error('Error rendering field value:', error, field);
+                            return 'Error rendering value';
+                          }
+                        })()
+                      }</div>
                     </div>
                     
                     <div className="field-controls">
-                      <div className="radio-group">
-                        <label className="radio-label">
-                          <input
-                            type="radio"
-                            name={`mapping-${globalIndex}`}
-                            value="static"
-                            checked={field.mappingType === 'static'}
-                            onChange={() => updateRequestField(globalIndex, 'mappingType', 'static')}
-                          />
-                          📌 Static
-                        </label>
-                        <label className="radio-label">
-                          <input
-                            type="radio"
-                            name={`mapping-${globalIndex}`}
-                            value="dynamic"
-                            checked={field.mappingType === 'dynamic'}
-                            onChange={() => updateRequestField(globalIndex, 'mappingType', 'dynamic')}
-                          />
-                          🔄 Dynamic
-                        </label>
+                      <div className="data-source-selector">
+                        <h5>Choose Data Source:</h5>
+                        <div className="radio-group-enhanced">
+                          <label className="radio-label-enhanced">
+                            <input
+                              type="radio"
+                              name={`mapping-${globalIndex}`}
+                              value="static"
+                              checked={field.mappingType === 'static'}
+                              onChange={() => updateRequestField(globalIndex, 'mappingType', 'static')}
+                            />
+                            <div className="radio-content">
+                              <span className="radio-icon">📌</span>
+                              <div className="radio-text">
+                                <strong>1. Static Data</strong>
+                                <small>Fixed values from cURL (API keys, headers)</small>
+                              </div>
+                            </div>
+                          </label>
+                          
+                          <label className="radio-label-enhanced">
+                            <input
+                              type="radio"
+                              name={`mapping-${globalIndex}`}
+                              value="dynamic"
+                              checked={field.mappingType === 'dynamic'}
+                              onChange={() => updateRequestField(globalIndex, 'mappingType', 'dynamic')}
+                            />
+                            <div className="radio-content">
+                              <span className="radio-icon">✏️</span>
+                              <div className="radio-text">
+                                <strong>2. Dynamic Data</strong>
+                                <small>User input from session (AMOUNT, PIN, selection)</small>
+                              </div>
+                            </div>
+                          </label>
+                          
+                          <label className="radio-label-enhanced">
+                            <input
+                              type="radio"
+                              name={`mapping-${globalIndex}`}
+                              value="session"
+                              checked={field.mappingType === 'session'}
+                              onChange={() => updateRequestField(globalIndex, 'mappingType', 'session')}
+                            />
+                            <div className="radio-content">
+                              <span className="radio-icon">💾</span>
+                              <div className="radio-text">
+                                <strong>3. Session Data</strong>
+                                <small>Previous API responses & menu selections</small>
+                              </div>
+                            </div>
+                          </label>
+                        </div>
                       </div>
                       
-                      {field.mappingType === 'static' ? (
+                      {/* Configuration based on selected data source */}
+                      {field.mappingType === 'static' && (
                         <div className="static-config">
-                          <label>Static Value:</label>
-                          <input
-                            type="text"
-                            value={field.staticValue || field.value || ''}
-                            onChange={(e) => updateRequestField(globalIndex, 'staticValue', e.target.value)}
-                            placeholder="Enter static value"
-                            className="static-value-input"
-                          />
+                          <label>📌 Static Values (Fixed Data):</label>
+                          <div className="data-type-description">
+                            <h6>🔧 What is Static Data?</h6>
+                            <p>Fixed values that are part of your cURL command or never change. These are automatically detected from your API configuration.</p>
+                          </div>
+                          
+                          {/* SHOW DETECTED STATIC VALUES FROM CURL */}
+                          <div className="detected-static-values">
+                            <h6>🔍 Auto-detected from cURL:</h6>
+                            <div className="curl-static-preview">
+                              {(() => {
+                                // Show what was detected from the cURL command
+                                const curlFields = Object.keys(templateData?.target?.headers || {});
+                                if (curlFields.length > 0) {
+                                  return (
+                                    <div className="auto-detected-fields">
+                                      <strong>Headers:</strong> {curlFields.map(h => `${h}: ${templateData.target.headers[h]}`).join(', ')}
+                                    </div>
+                                  );
+                                } else {
+                                  return <em>No headers detected. Add static values manually below.</em>;
+                                }
+                              })()}
+                            </div>
+                          </div>
+                          
+                          <div className="static-value-input-section">
+                            <label>Manual Static Value:</label>
+                            <input
+                              type="text"
+                              value={(() => {
+                                try {
+                                  const value = field.staticValue || field.value || '';
+                                  if (typeof value === 'object') return JSON.stringify(value);
+                                  return String(value);
+                                } catch (error) {
+                                  console.error('Error processing static value:', error, field);
+                                  return '';
+                                }
+                              })()}
+                              onChange={(e) => updateRequestField(globalIndex, 'staticValue', e.target.value)}
+                              placeholder="e.g., 'Bearer token123', 'v1.0', 'application/json'"
+                              className="static-value-input"
+                            />
+                          </div>
+                          
+                          <div className="static-examples">
+                            <h6>💡 Common Static Values:</h6>
+                            <div className="example-tags">
+                              <span className="example-tag" onClick={() => updateRequestField(globalIndex, 'staticValue', 'application/json')}>
+                                application/json
+                              </span>
+                              <span className="example-tag" onClick={() => updateRequestField(globalIndex, 'staticValue', 'Bearer YOUR_TOKEN')}>
+                                Bearer YOUR_TOKEN
+                              </span>
+                              <span className="example-tag" onClick={() => updateRequestField(globalIndex, 'staticValue', 'v1.0')}>
+                                v1.0
+                              </span>
+                              <span className="example-tag" onClick={() => updateRequestField(globalIndex, 'staticValue', 'true')}>
+                                true
+                              </span>
+                            </div>
+                          </div>
+                          
+                          <div className="help-section">
+                            <small className="help-text">
+                              🔒 <strong>Static Data:</strong> Values that never change during execution
+                              <br/>📋 <strong>Examples:</strong> API keys, version numbers, content-type headers
+                            </small>
+                          </div>
                         </div>
-                      ) : (
-                        <div className="dynamic-config">
-                          <label>Store Attribute:</label>
+                      )}
+                      
+                      {field.mappingType === 'dynamic' && (
+                        <div className="input-config">
+                          <label>✏️ User Input Variables (Dynamic Data):</label>
+                          <div className="data-type-description">
+                            <h6>📝 What is Dynamic Data?</h6>
+                            <p>Data collected from users during their current session through input nodes (PIN entry, text input, menu selections).</p>
+                          </div>
+                          
                           <select
                             value={field.storeAttribute || ''}
                             onChange={(e) => updateRequestField(globalIndex, 'storeAttribute', e.target.value)}
                             className="store-attribute-select"
                           >
-                            <option value="">Select attribute...</option>
-                            {availableAttributes.map(attr => (
-                              <option key={attr} value={attr}>{attr}</option>
-                            ))}
+                            <option value="">Select user input variable...</option>
+                            
+                            {/* AVAILABLE SESSION VARIABLES FROM YOUR FLOW */}
+                            {safeAvailableVariables && safeAvailableVariables.length > 0 && (
+                              <optgroup label="📊 Available Input Variables">
+                                {safeAvailableVariables
+                                  .filter(variable => {
+                                    // Only show variables that are likely user input (not API responses)
+                                    const varName = variable.toLowerCase();
+                                    return !varName.includes('_items') && 
+                                           !varName.includes('_menu') && 
+                                           !varName.includes('_response') &&
+                                           !varName.includes('selecteditem');
+                                  })
+                                  .map((variable, idx) => (
+                                    <option key={idx} value={variable}>
+                                      {variable} - User input variable
+                                    </option>
+                                  ))
+                                }
+                              </optgroup>
+                            )}
                           </select>
-                          <input
-                            type="text"
-                            placeholder="Or type custom..."
-                            value={field.storeAttribute || ''}
-                            onChange={(e) => updateRequestField(globalIndex, 'storeAttribute', e.target.value)}
-                            className="store-attribute-input"
-                          />
-                          <label>Target Path:</label>
+                          
+                          <div className="custom-input-section">
+                            <label>Or enter custom variable name:</label>
+                            <input
+                              type="text"
+                              placeholder="e.g., customerID, transactionRef, voucher_code"
+                              value={field.storeAttribute || ''}
+                              onChange={(e) => updateRequestField(globalIndex, 'storeAttribute', e.target.value)}
+                              className="store-attribute-input"
+                            />
+                          </div>
+                          
+                          <div className="help-section">
+                            <small className="help-text">
+                              💡 <strong>Tip:</strong> These are variables collected from users in Input Nodes during their current USSD session.
+                              <br/>📋 <strong>Example:</strong> User enters PIN "1234" → <code>pin</code> = "1234"
+                            </small>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {field.mappingType === 'session' && (
+                        <div className="session-config">
+                          <label>💾 Session Data Variables (From Previous APIs):</label>
+                          <div className="data-type-description">
+                            <h6>🔄 What is Session Data?</h6>
+                            <p>Data stored from previous API responses in your USSD flow. When you create dynamic menus, this data becomes available for subsequent API calls.</p>
+                          </div>
+                          
+                          <div className="session-data-sections">
+                            {/* SECTION 1: PREVIOUS API RESPONSE DATA */}
+                            <div className="session-section">
+                              <h6>📋 Previous API Response Data:</h6>
+                              <select
+                                value={field.storeAttribute || ''}
+                                onChange={(e) => updateRequestField(globalIndex, 'storeAttribute', e.target.value)}
+                                className="store-attribute-select"
+                                style={{marginBottom: '10px'}}
+                              >
+                                <option value="">Select session variable...</option>
+                                
+                                {/* DYNAMIC SESSION VARIABLES FROM ACTION NODES - GROUPED BY TEMPLATE */}
+                                {safeAvailableVariables && safeAvailableVariables.length > 0 ? (
+                                  <>
+                                    {/* Group session variables by template */}
+                                    {Object.entries(availableVariablesByTemplate || {}).map(([templateName, templateVariables]) => {
+                                      const filteredVariables = templateVariables.filter(variable => {
+                                        const varName = variable.toLowerCase();
+                                        // Exclude user input variables (those should be in Dynamic Data)
+                                        if (['amount', 'pin', 'userinput', 'selection', 'user_input', 'username'].includes(varName)) {
+                                          return false;
+                                        }
+                                        // Exclude menu raw and values (not needed, we have field extraction)
+                                        if (varName.includes('_menu_raw') || varName.includes('_values')) {
+                                          return false;
+                                        }
+                                        return true;
+                                      });
+                                      
+                                      if (filteredVariables.length === 0) return null;
+                                      
+                                      return (
+                                        <optgroup key={templateName} label={`📋 ${templateName}`}>
+                                          {filteredVariables.map((variable, idx) => (
+                                            <option key={`${templateName}-${idx}`} value={variable}>
+                                              {variable}
+                                            </option>
+                                          ))}
+                                        </optgroup>
+                                      );
+                                    })}
+                                    
+                                    {/* Fallback: ungrouped variables (shouldn't happen with new system) */}
+                                    {Object.keys(availableVariablesByTemplate || {}).length === 0 && (
+                                      <optgroup label="📋 Available Session Variables">
+                                        {safeAvailableVariables
+                                          .filter(variable => {
+                                            const varName = variable.toLowerCase();
+                                            // Exclude user input variables (those should be in Dynamic Data)
+                                            if (['amount', 'pin', 'userinput', 'selection', 'user_input', 'username'].includes(varName)) {
+                                              return false;
+                                            }
+                                            // Exclude menu raw and values (not needed, we have field extraction)
+                                            if (varName.includes('_menu_raw') || varName.includes('_values')) {
+                                              return false;
+                                            }
+                                            return true;
+                                          })
+                                          .map((variable, idx) => (
+                                            <option key={idx} value={variable}>
+                                              {variable} (From action node template data)
+                                            </option>
+                                          ))
+                                        }
+                                      </optgroup>
+                                    )}
+                                  </>
+                                ) : (
+                                  <optgroup label="ℹ️ No Session Data Available">
+                                    <option value="" disabled>No action nodes with template data found</option>
+                                  </optgroup>
+                                )}
+                              </select>
+                              
+                              {safeAvailableVariables && safeAvailableVariables.length > 0 && (
+                                <div className="available-variables-info">
+                                  <h6>💡 Session Variables Available:</h6>
+                                  <div className="variables-list">
+                                    {safeAvailableVariables
+                                      .filter(variable => {
+                                        const varName = variable.toLowerCase();
+                                        return !['amount', 'pin', 'userinput', 'selection'].includes(varName);
+                                      })
+                                      .map((variable, idx) => (
+                                        <span key={idx} className="variable-tag">
+                                          {variable}
+                                        </span>
+                                      ))
+                                    }
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* SECTION 2: DYNAMIC MENU SELECTION DATA */}
+                            {(() => {
+                              const hasMenuData = selectedArrayConfig.selectedArray !== null && 
+                                                 arrayPreview?.detectedArrays?.length > 0;
+                              
+                              if (hasMenuData) {
+                                return (
+                                  <div className="session-section menu-selection-section">
+                                    <h6>🎯 User's Menu Selection Data:</h6>
+                                    <div className="menu-detection-info">
+                                      <p>✅ Dynamic menu configured: <code>{selectedArrayConfig.sessionVariable}</code></p>
+                                      <small>Select fields from the item the user chose:</small>
+                                    </div>
+                                    
+                                    <select
+                                      value={field.storeAttribute || ''}
+                                      onChange={(e) => updateRequestField(globalIndex, 'storeAttribute', e.target.value)}
+                                      className="store-attribute-select"
+                                      style={{marginBottom: '10px'}}
+                                    >
+                                      <option value="">Select from user's menu choice...</option>
+                                      
+                                      {/* API-SPECIFIC SELECTED ITEM FIELDS */}
+                                      <optgroup label={`🎯 ${templateData._id || 'Current API'} - Selected Item Fields`}>
+                                        {(() => {
+                                          const apiId = templateData._id || 'CURRENT_API';
+                                          const availableFields = arrayPreview.detectedArrays[selectedArrayConfig.selectedArray]?.sampleKeys || [];
+                                          
+                                          return availableFields.map(fieldName => (
+                                            <option key={fieldName} value={`${apiId}_selectedItem.${fieldName}`}>
+                                              {apiId}_selectedItem.{fieldName} (Selected {fieldName})
+                                            </option>
+                                          ));
+                                        })()}
+                                      </optgroup>
+                                      
+                                      {/* GENERIC FALLBACK */}
+                                      <optgroup label="📋 Generic Selected Item (Backward Compatibility)">
+                                        {(() => {
+                                          const availableFields = arrayPreview.detectedArrays[selectedArrayConfig.selectedArray]?.sampleKeys || [];
+                                          return availableFields.map(fieldName => (
+                                            <option key={`generic_${fieldName}`} value={`selectedItem.${fieldName}`}>
+                                              selectedItem.{fieldName} (Generic {fieldName})
+                                            </option>
+                                          ));
+                                        })()}
+                                      </optgroup>
+                                    </select>
+                                  </div>
+                                );
+                              } else {
+                                return (
+                                  <div className="session-section no-menu-section">
+                                    <h6>🎯 User's Menu Selection Data:</h6>
+                                    <p className="info-message">
+                                      ℹ️ No dynamic menu configured yet. Configure an array in Step 2 to see menu selection options.
+                                    </p>
+                                  </div>
+                                );
+                              }
+                            })()}
+                          </div>
+                          
+                          <div className="custom-session-input">
+                            <label>Or enter custom session variable:</label>
+                            <input
+                              type="text"
+                              placeholder="e.g., SEARCH_selectedItem.title, userBalance, authToken"
+                              value={field.storeAttribute || ''}
+                              onChange={(e) => updateRequestField(globalIndex, 'storeAttribute', e.target.value)}
+                              className="store-attribute-input"
+                            />
+                            <div className="jolt-quick-templates">
+                              <h6>🚀 Quick JOLT Templates (Click to use):</h6>
+                              <div className="template-buttons">
+                                <button 
+                                  type="button"
+                                  className="template-btn"
+                                  onClick={() => updateRequestField(globalIndex, 'storeAttribute', `items_menu_for_${templateData._id || 'YOUR_API'}_items`)}
+                                >
+                                  items_menu_for_{templateData._id || 'YOUR_API'}_items
+                                </button>
+                                <button 
+                                  type="button"
+                                  className="template-btn"
+                                  onClick={() => updateRequestField(globalIndex, 'storeAttribute', `items_menu_for_${templateData._id || 'YOUR_API'}_menu_raw`)}
+                                >
+                                  items_menu_for_{templateData._id || 'YOUR_API'}_menu_raw
+                                </button>
+                                <button 
+                                  type="button"
+                                  className="template-btn"
+                                  onClick={() => updateRequestField(globalIndex, 'storeAttribute', `items_menu_for_${templateData._id || 'YOUR_API'}_values`)}
+                                >
+                                  items_menu_for_{templateData._id || 'YOUR_API'}_values
+                                </button>
+                                <button 
+                                  type="button"
+                                  className="template-btn"
+                                  onClick={() => updateRequestField(globalIndex, 'storeAttribute', `${templateData._id || 'YOUR_API'}.status`)}
+                                >
+                                  {templateData._id || 'YOUR_API'}.status
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="help-section">
+                            <small className="help-text">
+                              💡 <strong>Session Data Flow:</strong> API1 Response → Store Data → User Selects Menu → API2 Uses Selected Data
+                              <br/>📋 <strong>Example:</strong> User selects "Book: 1984" → <code>SEARCH_selectedItem.title</code> = "1984"
+                            </small>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Target Path Configuration */}
+                      {(field.mappingType === 'dynamic' || field.mappingType === 'session') && (
+                        <div className="target-path-config">
+                          <label>🎯 Target Path:</label>
                           <input
                             type="text"
                             value={field.targetPath || field.path}
                             onChange={(e) => updateRequestField(globalIndex, 'targetPath', e.target.value)}
-                            placeholder="API field path"
+                            placeholder="API field path (e.g., user.accountId)"
                             className="store-attribute-input"
                           />
+                          <small className="help-text">Where to put this data in the API request</small>
                         </div>
                       )}
                     </div>
@@ -818,6 +2095,41 @@ curl -X PUT 'http://api.example.com/endpoint' \\
       <div className="step-content">
         <h3>Step 3: Configure Response & Error Mapping</h3>
         <p>Transform API responses into USSD-friendly format using intelligent mapping:</p>
+        
+        {/* Dynamic Menu Detection Section - MOVED TO TOP */}
+        <div className="dynamic-menu-section">
+          <h4>🔄 Dynamic Menu Integration</h4>
+          <p className="help-text">Automatically detect and prepare array data for dynamic menu nodes:</p>
+          
+          <div className="checkbox-group">
+            <label className="checkbox-label">
+              <input 
+                type="checkbox" 
+                checked={isDynamicMenuNext}
+                onChange={(e) => setIsDynamicMenuNext(e.target.checked)}
+              />
+              <span className="checkbox-text">
+                📋 Next node is a Dynamic Menu (auto-detect arrays for menu options)
+              </span>
+            </label>
+          </div>
+          
+          {isDynamicMenuNext && (
+            <div className="dynamic-menu-config">
+              <div className="info-box">
+                <h5>🤖 Auto Array Detection</h5>
+                <p>When enabled, the system will:</p>
+                <ul>
+                  <li>🔍 Scan API response for arrays</li>
+                  <li>📊 Analyze array element types (strings, numbers, objects)</li>
+                  <li>🔑 Extract available keys from object arrays</li>
+                  <li>💾 Prepare data for dynamic menu consumption</li>
+                  <li>🔄 Add session variables for seamless menu generation</li>
+                </ul>
+              </div>
+            </div>
+          )}
+        </div>
         
         <div className="response-section">
           <h4>✅ Success Response Transformation</h4>
@@ -926,6 +2238,237 @@ curl -X PUT 'http://api.example.com/endpoint' \\
           >
             🔍 Auto-Detect Mappings
           </button>
+          
+          {/* Array Preview Section - Show when dynamic menu is enabled */}
+          {isDynamicMenuNext && (
+            <div className="array-preview-section">
+              <button 
+                onClick={() => {
+                  if (responseMapping.rawResponse) {
+                    try {
+                      const parsed = JSON.parse(responseMapping.rawResponse);
+                      const arrays = analyzeArraysInResponse(parsed);
+                      console.log('🔍 Detected arrays:', arrays);
+                      if (arrays.length > 0) {
+                        const preview = {
+                          detectedArrays: arrays,
+                          totalArrays: arrays.length,
+                          recommendations: arrays.map(arr => ({
+                            path: arr.path,
+                            type: arr.type,
+                            suggested: {
+                              sessionVariable: generateSmartSessionName(arr.path),
+                              displayKey: arr.type === 'objects' ? arr.sampleKeys[1] || arr.sampleKeys[0] : null,
+                              valueKey: arr.type === 'objects' ? arr.sampleKeys[0] : 'index'
+                            }
+                          }))
+                        };
+                        setArrayPreview(preview);
+                      } else {
+                        setArrayPreview({ detectedArrays: [], message: 'No arrays detected in the response' });
+                      }
+                    } catch (e) {
+                      console.error('Error previewing arrays:', e);
+                      alert('Please enter valid JSON in the response field first');
+                    }
+                  } else {
+                    alert('Please paste your API response in the JSON field above first');
+                  }
+                }}
+                className="btn secondary"
+                disabled={!responseMapping.rawResponse}
+                style={{ marginLeft: '10px', backgroundColor: '#10b981', color: 'white' }}
+              >
+                🔍 Preview Arrays for Dynamic Menu
+              </button>
+              
+              {arrayPreview && (
+                <div className="preview-result">
+                  <h5>📋 Array Detection Results:</h5>
+                  {arrayPreview.detectedArrays && arrayPreview.detectedArrays.length > 0 ? (
+                    <div className="array-results">
+                      <p className="success-message">✅ Found {safeRender(arrayPreview.totalArrays)} array(s) suitable for dynamic menus:</p>
+                      
+                      {/* Array Selection */}
+                      <div className="array-selection-section">
+                        <h6>🎯 Select Array for Dynamic Menu:</h6>
+                        {arrayPreview.recommendations && arrayPreview.recommendations.map((rec, index) => (
+                          <div key={index} className="array-option">
+                            <label className="array-option-label">
+                              <input
+                                type="radio"
+                                name="selectedArray"
+                                value={index}
+                                checked={selectedArrayConfig.selectedArray === index}
+                                onChange={(e) => {
+                                  const selectedIndex = parseInt(e.target.value);
+                                  const selectedRec = arrayPreview.recommendations && arrayPreview.recommendations[selectedIndex];
+                                  if (selectedRec) {
+                                    setSelectedArrayConfig({
+                                      selectedArray: selectedIndex,
+                                      displayKey: selectedRec.suggested.displayKey || '',
+                                      valueKey: selectedRec.suggested.valueKey || '',
+                                      sessionVariable: selectedRec.suggested.sessionVariable,
+                                      customSessionName: ''
+                                    });
+                                  }
+                                }}
+                              />
+                              <div className="array-option-content">
+                                <strong>Array #{index + 1}: <code>{safeRender(rec.path)}</code></strong>
+                                <div className="array-details">
+                                  <span className="array-type">Type: {safeRender(rec.type)}</span>
+                                  <span className="array-size">Size: {arrayPreview.detectedArrays && arrayPreview.detectedArrays[index] ? String(arrayPreview.detectedArrays[index].size || 'N/A') : 'N/A'}</span>
+                                </div>
+                                {rec.type === 'objects' && arrayPreview.detectedArrays && arrayPreview.detectedArrays[index] && (
+                                  <div className="available-keys">
+                                    <strong>Available Keys:</strong> {safeRender(arrayPreview.detectedArrays[index]?.sampleKeys?.join(', ') || 'N/A')}
+                                  </div>
+                                )}
+                              </div>
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Configuration Section - Show when array is selected */}
+                      {selectedArrayConfig.selectedArray !== null && (
+                        <div className="array-config-section">
+                          <h6>⚙️ Configure Dynamic Menu Settings:</h6>
+                          
+                          <div className="config-grid">
+                            <div className="config-group">
+                              <label>📝 Display Key (what users see):</label>
+                              {arrayPreview.recommendations && arrayPreview.recommendations[selectedArrayConfig.selectedArray] && arrayPreview.recommendations[selectedArrayConfig.selectedArray].type === 'objects' ? (
+                                <select
+                                  value={selectedArrayConfig.displayKey}
+                                  onChange={(e) => setSelectedArrayConfig(prev => ({...prev, displayKey: e.target.value}))}
+                                  className="config-select"
+                                >
+                                  <option value="">Select display field...</option>
+                                  {arrayPreview.detectedArrays && arrayPreview.detectedArrays[selectedArrayConfig.selectedArray] && arrayPreview.detectedArrays[selectedArrayConfig.selectedArray].sampleKeys.map(key => (
+                                    <option key={key} value={key}>{safeRender(key)}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <input
+                                  type="text"
+                                  value="Direct array values"
+                                  disabled
+                                  className="config-input disabled"
+                                />
+                              )}
+                            </div>
+
+                            <div className="config-group">
+                              <label>🔑 Value Key (for routing):</label>
+                              {arrayPreview.recommendations && arrayPreview.recommendations[selectedArrayConfig.selectedArray] && arrayPreview.recommendations[selectedArrayConfig.selectedArray].type === 'objects' ? (
+                                <select
+                                  value={selectedArrayConfig.valueKey}
+                                  onChange={(e) => setSelectedArrayConfig(prev => ({...prev, valueKey: e.target.value}))}
+                                  className="config-select"
+                                >
+                                  <option value="">Select value field...</option>
+                                  <option value="index">Array Index (0, 1, 2...)</option>
+                                  {arrayPreview.detectedArrays && arrayPreview.detectedArrays[selectedArrayConfig.selectedArray] && arrayPreview.detectedArrays[selectedArrayConfig.selectedArray].sampleKeys.map(key => (
+                                    <option key={key} value={key}>{safeRender(key)}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <select
+                                  value={selectedArrayConfig.valueKey}
+                                  onChange={(e) => setSelectedArrayConfig(prev => ({...prev, valueKey: e.target.value}))}
+                                  className="config-select"
+                                >
+                                  <option value="index">Array Index (0, 1, 2...)</option>
+                                  <option value="value">Direct Values</option>
+                                </select>
+                              )}
+                            </div>
+
+                            <div className="config-group">
+                              <label>💾 Session Variable Name:</label>
+                              <input
+                                type="text"
+                                value={selectedArrayConfig.customSessionName || selectedArrayConfig.sessionVariable}
+                                onChange={(e) => setSelectedArrayConfig(prev => ({...prev, customSessionName: e.target.value}))}
+                                className="config-input"
+                                placeholder={`e.g., ${selectedArrayConfig.selectedArray !== null && arrayPreview.recommendations && arrayPreview.recommendations[selectedArrayConfig.selectedArray] ? String(generateSmartSessionName(arrayPreview.recommendations[selectedArrayConfig.selectedArray].path) || 'books_menu') : 'books_menu'}, products_menu, accounts_menu`}
+                              />
+                              <div className="naming-guide">
+                                <small className="naming-tips">
+                                  💡 <strong>Naming Tips:</strong>
+                                  <br />• Use descriptive names: <code>books_menu</code>, <code>categories_menu</code>, <code>products_menu</code>
+                                  <br />• Avoid generic names like <code>data</code> or <code>items</code> if you have multiple menus
+                                  <br />• Use lowercase with underscores: <code>user_accounts_menu</code>
+                                </small>
+                              </div>
+                              <div className="generated-variables">
+                                <small className="variable-preview">
+                                  🔄 <strong>This will create:</strong>
+                                  <br />• <code>{safeRender(selectedArrayConfig.customSessionName || selectedArrayConfig.sessionVariable || 'menu')}_items</code> (full objects)
+                                  <br />• <code>{safeRender(selectedArrayConfig.customSessionName || selectedArrayConfig.sessionVariable || 'menu')}_menu_raw</code> (display values)
+                                  <br />• <code>{safeRender(selectedArrayConfig.customSessionName || selectedArrayConfig.sessionVariable || 'menu')}_values</code> (routing values)
+                                </small>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Preview of selected configuration */}
+                          <div className="config-preview">
+                            <h6>🔍 Configuration Preview:</h6>
+                            <div className="preview-details">
+                              <p><strong>Array Path:</strong> <code>{safeRender(arrayPreview.recommendations?.[selectedArrayConfig.selectedArray]?.path || 'N/A')}</code></p>
+                              <p><strong>Session Variable:</strong> <code>{safeRender(selectedArrayConfig.customSessionName || selectedArrayConfig.sessionVariable || 'default')}</code></p>
+                              {selectedArrayConfig.displayKey && (
+                                <p><strong>Display Field:</strong> <code>{selectedArrayConfig.displayKey}</code></p>
+                              )}
+                              <p><strong>Value Source:</strong> <code>{selectedArrayConfig.valueKey || 'index'}</code></p>
+                              
+                              {/* Sample menu preview */}
+                              <div className="sample-menu">
+                                <strong>Sample USSD Menu:</strong>
+                                <div className="menu-preview">
+                                  {arrayPreview.detectedArrays[selectedArrayConfig.selectedArray].sampleData.slice(0, 3).map((item, idx) => (
+                                    <div key={idx} className="menu-item">
+                                      {idx + 1}. {
+                                        arrayPreview.recommendations[selectedArrayConfig.selectedArray].type === 'objects' && selectedArrayConfig.displayKey
+                                          ? item[selectedArrayConfig.displayKey] || 'N/A'
+                                          : String(item)
+                                      }
+                                    </div>
+                                  ))}
+                                  {arrayPreview.detectedArrays?.[selectedArrayConfig.selectedArray]?.size > 3 && (
+                                    <div className="menu-item">... and {safeRender((arrayPreview.detectedArrays?.[selectedArrayConfig.selectedArray]?.size || 3) - 3)} more</div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="next-steps">
+                        <h6>📝 Next Steps:</h6>
+                        <ol>
+                          <li>Select an array from the options above</li>
+                          <li>Configure display and value keys for object arrays</li>
+                          <li>Customize session variable name if needed</li>
+                          <li>Generate your JOLT spec (configuration will be applied automatically)</li>
+                          <li>In your Dynamic Menu node, use the configured session variable</li>
+                        </ol>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="no-arrays">
+                      <p className="info-message">ℹ️ {safeRender(arrayPreview.message || 'No arrays detected in the response')}</p>
+                      <p>Your response doesn't contain arrays suitable for dynamic menus. This is normal if your API returns single objects or simple values.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           
           {responseMapping.generated && (
             <div className="generated-spec">
@@ -1077,13 +2620,68 @@ curl -X PUT 'http://api.example.com/endpoint' \\
         
         <div className="step-buttons">
           <button onClick={() => setStep(2)} className="btn secondary">← Back</button>
-          <button 
-            onClick={generateJoltSpecs} 
-            className="btn primary"
-            disabled={!responseMapping.generated || !errorMapping.generated}
-          >
-            Next: Generate Complete Template →
-          </button>
+          
+          {(() => {
+            // Check if we have menu selection data available
+            // Priority 1: Use previously configured array
+            let hasMenuSelection = false;
+            
+            if (selectedArrayConfig.selectedArray !== null && arrayPreview?.detectedArrays?.length > 0) {
+              hasMenuSelection = true;
+              console.log('Button detection - using configured array:', selectedArrayConfig.sessionVariable);
+            } else {
+              // Priority 2: Pattern detection as fallback
+              hasMenuSelection = safeAvailableVariables.some(variable => 
+                (variable.includes('_menu_') && variable.includes('_items')) ||
+                (variable.includes('items_menu_')) ||
+                (variable.includes('menu') && variable.includes('items')) ||
+                (variable.includes('_menu_'))
+              );
+              console.log('Button detection - pattern-based detection:', hasMenuSelection);
+            }
+            
+            console.log('Button detection - hasMenuSelection:', hasMenuSelection);
+            console.log('Button detection - selectedArrayConfig:', selectedArrayConfig);
+            console.log('Button detection - arrayPreview:', arrayPreview);
+            
+            // Check if any fields are using selectedItem.* session variables (generic or API-specific)
+            const hasSessionFields = requestMapping.some(field => 
+              field.mappingType === 'session' && field.storeAttribute && 
+              (field.storeAttribute.includes('selectedItem.') || field.storeAttribute.includes('_selectedItem.'))
+            );
+            
+            console.log('🔍 Button detection - hasSessionFields:', hasSessionFields);
+            console.log('🔍 Button detection - all session fields:', requestMapping.filter(f => f.mappingType === 'session'));
+            console.log('🔍 Button detection - requestMapping details:', requestMapping.map(f => ({
+              path: f.path,
+              mappingType: f.mappingType,
+              storeAttribute: f.storeAttribute,
+              hasSelectedItem: f.storeAttribute?.includes('selectedItem.')
+            })));
+            console.log('🔍 Button detection - will show session-aware button:', hasMenuSelection && hasSessionFields);
+            
+            if (hasMenuSelection && hasSessionFields) {
+              return (
+                <button 
+                  onClick={generateSessionAwareJoltSpecs} 
+                  className="btn primary session-aware-btn"
+                  disabled={!responseMapping.generated || !errorMapping.generated}
+                >
+                  🎯 Generate Session-Aware Template (Menu Selection) →
+                </button>
+              );
+            } else {
+              return (
+                <button 
+                  onClick={generateJoltSpecs} 
+                  className="btn primary"
+                  disabled={!responseMapping.generated || !errorMapping.generated}
+                >
+                  Next: Generate Complete Template →
+                </button>
+              );
+            }
+          })()}
         </div>
       </div>
     );
@@ -1137,38 +2735,40 @@ curl -X PUT 'http://api.example.com/endpoint' \\
 
   // Simple, clean return statement like the working example - rendered with Portal
   return createPortal(
-    <div className="api-template-overlay">
-      <div className="api-template-modal">
-        <div className="modal-header">
-          <h2>API Template Builder</h2>
-          <div className="header-actions">
-            <button 
-              onClick={handleImportTemplate} 
-              className="btn secondary import-btn"
-              title="Import template from file"
-            >
-              📂 Import
-            </button>
-            <button onClick={onClose} className="close-btn">×</button>
+    <TemplateCreatorErrorBoundary>
+      <div className="api-template-overlay">
+        <div className="api-template-modal">
+          <div className="modal-header">
+            <h2>API Template Builder</h2>
+            <div className="header-actions">
+              <button 
+                onClick={handleImportTemplate} 
+                className="btn secondary import-btn"
+                title="Import template from file"
+              >
+                📂 Import
+              </button>
+              <button onClick={onClose} className="close-btn">×</button>
+            </div>
+          </div>
+          
+          <div className="step-indicator">
+            {[1, 2, 3, 4].map(num => (
+              <div key={num} className={`step ${step >= num ? 'active' : ''}`}>
+                {num}
+              </div>
+            ))}
+          </div>
+          
+          <div className="modal-content">
+            {step === 1 && renderStep1()}
+            {step === 2 && renderStep2()}
+            {step === 3 && renderStep3()}
+            {step === 4 && renderStep4()}
           </div>
         </div>
-        
-        <div className="step-indicator">
-          {[1, 2, 3, 4].map(num => (
-            <div key={num} className={`step ${step >= num ? 'active' : ''}`}>
-              {num}
-            </div>
-          ))}
-        </div>
-        
-        <div className="modal-content">
-          {step === 1 && renderStep1()}
-          {step === 2 && renderStep2()}
-          {step === 3 && renderStep3()}
-          {step === 4 && renderStep4()}
-        </div>
       </div>
-    </div>,
+    </TemplateCreatorErrorBoundary>,
     document.body
   );
 };

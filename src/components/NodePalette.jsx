@@ -15,6 +15,12 @@ const NodePalette = ({ onNodeDrop }) => {
       description: 'Menu with multiple options'
     },
     {
+      type: 'dynamic-menu',
+      label: 'DYNAMIC MENU',
+      icon: '📱',
+      description: 'Session-driven dynamic menu options'
+    },
+    {
       type: 'input',
       label: 'INPUT',
       icon: '⌨️',

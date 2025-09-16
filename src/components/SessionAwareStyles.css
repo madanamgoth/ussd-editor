@@ -1,0 +1,195 @@
+/* Session-Aware JOLT Generation Styles */
+.session-aware-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  border: none;
+  color: white;
+  position: relative;
+  overflow: hidden;
+}
+
+.session-aware-btn::before {
+  content: '🎯';
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 16px;
+}
+
+.session-aware-btn:hover {
+  background: linear-gradient(135deg, #5a6fd8 0%, #6a4c93 100%) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+/* Menu Selection Configuration Styles */
+.menu-selection-config {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  color: white;
+  padding: 15px;
+  border-radius: 8px;
+  margin: 10px 0;
+}
+
+.menu-detection-info {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 10px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+
+.menu-detection-info h6 {
+  margin: 0 0 5px 0;
+  color: white;
+}
+
+.menu-detection-info code {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: #ffeb3b;
+}
+
+.selection-example {
+  margin-top: 15px;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 12px;
+  border-radius: 6px;
+}
+
+.selection-example h6 {
+  margin: 0 0 10px 0;
+  color: white;
+}
+
+.example-mapping {
+  display: grid;
+  gap: 8px;
+}
+
+.mapping-item {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 8px;
+  border-radius: 4px;
+  border-left: 3px solid #ffeb3b;
+}
+
+.mapping-item strong {
+  color: #ffeb3b;
+}
+
+.mapping-item code {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 1px 4px;
+  border-radius: 2px;
+  color: #4caf50;
+}
+
+.mapping-item small {
+  display: block;
+  margin-top: 4px;
+  opacity: 0.9;
+  font-style: italic;
+}
+
+/* Enhanced Session Config Select */
+.menu-selection-config .store-attribute-select {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #333;
+  width: 100%;
+  padding: 8px;
+  border-radius: 4px;
+  margin: 10px 0;
+}
+
+.menu-selection-config .store-attribute-select:focus {
+  background: white;
+  border-color: #ffeb3b;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 235, 59, 0.3);
+}
+
+/* Session Data Flow Indicators */
+.session-flow-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.session-flow-indicator::before {
+  content: '🔄';
+  font-size: 12px;
+}
+
+/* JOLT Spec Preview Enhancements */
+.jolt-preview.session-aware {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: 2px solid #667eea;
+}
+
+.jolt-preview.session-aware::before {
+  content: '🎯 Session-Aware JOLT Specification';
+  display: block;
+  font-weight: bold;
+  margin-bottom: 10px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+/* Step Progress Indicator */
+.step-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+.step-progress-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 15px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.step-progress-item.current {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+}
+
+.step-progress-item.completed {
+  background: #4caf50;
+  color: white;
+}
+
+.step-progress-item.pending {
+  background: #e0e0e0;
+  color: #666;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .session-aware-btn {
+    font-size: 14px;
+    padding: 12px 16px;
+  }
+  
+  .menu-selection-config {
+    padding: 12px;
+  }
+  
+  .example-mapping {
+    grid-template-columns: 1fr;
+  }
+}

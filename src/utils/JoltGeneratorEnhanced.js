@@ -5,37 +5,192 @@
  * Generate JOLT spec for response transformation
  * @param {Object} rawResponse - Original API response
  * @param {Object} desiredMapping - Field mapping configuration
+ * @param {Object} options - Additional options including dynamic menu configuration
  * @returns {Array} JOLT specification array
  */
-export const generateResponseJolt = (rawResponse, desiredMapping) => {
+export const generateResponseJolt = (rawResponse, desiredMapping, options = {}) => {
   try {
-    console.log('🔧 Generating Response JOLT with:', { rawResponse, desiredMapping });
+    console.log('🔧 Generating Response JOLT with:', { rawResponse, desiredMapping, options });
     
     const shiftSpec = {
-      input: {}
+      operation: "shift",
+      spec: {}
+    };
+    
+    const defaultSpec = {
+      success: true,
+      timestamp: new Date().toISOString(),
+      status: "SUCCEEDED"
     };
     
     // Parse the desired mapping and create shift operations
     Object.entries(desiredMapping).forEach(([sourcePath, targetPath]) => {
-      setNestedValue(shiftSpec.input, sourcePath, targetPath);
+      // Skip dynamicMenuData for now - we'll handle it specially
+      if (targetPath !== 'dynamicMenuData' && typeof targetPath === 'string') {
+        setNestedValue(shiftSpec.spec, sourcePath, targetPath);
+      }
     });
+    
+    // Handle dynamic menu data if present
+    if (desiredMapping.dynamicMenuData) {
+      console.log('🎯 Processing dynamic menu data:', desiredMapping.dynamicMenuData);
+      
+      Object.entries(desiredMapping.dynamicMenuData).forEach(([sessionKey, arrayPath]) => {
+        if (!sessionKey.endsWith('_meta')) {
+          // This is an array path, not metadata
+          console.log(`📋 Processing array: ${sessionKey} -> ${arrayPath}`);
+          
+          // Get the array from raw response to determine type
+          const arrayData = getNestedValue(rawResponse, arrayPath);
+          if (Array.isArray(arrayData) && arrayData.length > 0) {
+            
+            // Determine array type and generate appropriate JOLT
+            const firstElement = arrayData[0];
+            
+            if (typeof firstElement === 'string') {
+              // String array - use JOLT pattern for strings
+              console.log('🔤 String array detected');
+              setNestedValue(shiftSpec.spec, arrayPath, `${sessionKey}_formatted`);
+              
+            } else if (typeof firstElement === 'object' && firstElement !== null) {
+              // Object array - create complete USSD flow structure
+              console.log('🎯 Object array detected - creating 3-part structure');
+              
+              // Get metadata to determine display key
+              const metaKey = `${sessionKey}_meta`;
+              const metadata = desiredMapping.dynamicMenuData[metaKey];
+              
+              if (metadata && metadata.displayKey && metadata.valueKey) {
+                const displayKey = metadata.displayKey;
+                const valueKey = metadata.valueKey;
+                
+                console.log(`🔑 Using display key: ${displayKey}, value key: ${valueKey}`);
+                
+                // Create complete 3-part structure in shift operation
+                // Note: Each path must be unique in JOLT shift operation
+                
+                // 1. Individual Data - Store each item with index for detailed access
+                const itemsPath = `${arrayPath}[*]`;
+                shiftSpec.spec[itemsPath] = `${sessionKey}_items[&1]`;
+                
+                // 2. Dynamic Menu - Extract display values for menu creation  
+                const menuPath = `${arrayPath}[*].${displayKey}`;
+                shiftSpec.spec[menuPath] = `${sessionKey}_menu_raw[&1]`;
+                
+                // 3. Session Data - Extract routing values based on configuration
+                if (valueKey === 'index') {
+                  // For index routing, we'll let NiFi generate indices later
+                  console.log('📋 Using array indices for routing (will be generated in NiFi)');
+                } else {
+                  // Extract specific field for routing
+                  const valuesPath = `${arrayPath}[*].${valueKey}`;
+                  shiftSpec.spec[valuesPath] = `${sessionKey}_values[&1]`;
+                  console.log(`📋 Using field '${valueKey}' for routing values`);
+                }
+                
+                console.log(`✅ Created 3-part JOLT structure for ${sessionKey}:`, {
+                  items: `${sessionKey}_items`,
+                  menu: `${sessionKey}_menu_raw`, 
+                  values: valueKey === 'index' ? 'generated-in-nifi' : `${sessionKey}_values`
+                });
+                
+              } else {
+                // Fallback: use basic structure with first available key
+                console.log('⚠️ No display/value keys configured, using fallback');
+                setNestedValue(shiftSpec.spec, arrayPath, `${sessionKey}_items`);
+              }
+              
+            } else {
+              // Number array or other types
+              console.log('🔢 Number/other array detected');
+              setNestedValue(shiftSpec.spec, arrayPath, `${sessionKey}_formatted`);
+            }
+            
+            // Also preserve the original array
+            setNestedValue(shiftSpec.spec, arrayPath, sessionKey);
+          }
+        }
+      });
+    }
     
     const joltSpec = [
       {
         operation: "shift",
-        spec: shiftSpec
-      },
-      {
-        operation: "default",
-        spec: {
-          success: true,
-          timestamp: new Date().toISOString(),
-          status: "SUCCEEDED"
-        }
+        spec: shiftSpec.spec
       }
     ];
     
-    console.log('✅ Generated Response JOLT:', joltSpec);
+    // Add modify operation for USSD menu formatting if we have arrays to format
+    if (desiredMapping.dynamicMenuData) {
+      const modifySpec = {};
+      
+      Object.entries(desiredMapping.dynamicMenuData).forEach(([sessionKey, arrayPath]) => {
+        if (!sessionKey.endsWith('_meta')) {
+          const arrayData = getNestedValue(rawResponse, arrayPath);
+          if (Array.isArray(arrayData) && arrayData.length > 0) {
+            
+            const firstElement = arrayData[0];
+            const metaKey = `${sessionKey}_meta`;
+            const metadata = desiredMapping.dynamicMenuData[metaKey];
+            
+            if (typeof firstElement === 'object' && firstElement !== null && metadata) {
+              // Object array with 3-part structure
+              
+              // 1. Create numbered menu from display values (menu array is already extracted in shift)
+              modifySpec[`${sessionKey}_menu`] = {
+                "*": "=concat(=toString(=add(1,&1)),'. ',@(1,&))"
+              };
+              
+              // 2. Handle routing values array
+              if (metadata.valueKey === 'index') {
+                // Generate index values for array indices
+                modifySpec[`${sessionKey}_values`] = {
+                  "*": "&1"
+                };
+              }
+              // If valueKey is a field, values are already extracted in shift
+              
+              console.log(`✅ Created 3-part structure for ${sessionKey}:`, {
+                items: `${sessionKey}_items`,
+                menu: `${sessionKey}_menu`, 
+                values: `${sessionKey}_values`
+              });
+              
+            } else if (typeof firstElement === 'string') {
+              // String array formatting
+              modifySpec[`${sessionKey}_menu`] = {
+                "*": "=concat(=toString(=add(1,&1)),'. ',@(1,&))"
+              };
+              modifySpec[`${sessionKey}_values`] = {
+                "*": "&1" // Use indices for string arrays
+              };
+              
+            } else if (typeof firstElement === 'number') {
+              // Number array formatting
+              modifySpec[`${sessionKey}_menu`] = {
+                "*": "=concat(=toString(=add(1,&1)),'. ',=toString(@(1,&)))"
+              };
+              modifySpec[`${sessionKey}_values`] = {
+                "*": "&1" // Use indices for number arrays
+              };
+            }
+          }
+        }
+      });
+      
+      if (Object.keys(modifySpec).length > 0) {
+        // Skip modify operation for now - use shift and default only
+        console.log('⚠️ Skipping modify operation to avoid JOLT validation errors');
+      }
+    }
+    
+    // Add default operation
+    joltSpec.push({
+      operation: "default",
+      spec: defaultSpec
+    });
+    
+    console.log('✅ Generated Enhanced Response JOLT:', joltSpec);
     return joltSpec;
   } catch (error) {
     console.error('❌ Error generating response JOLT:', error);
@@ -54,18 +209,19 @@ export const generateErrorJolt = (rawError, desiredMapping) => {
     console.log('🔧 Generating Error JOLT with:', { rawError, desiredMapping });
     
     const shiftSpec = {
-      input: {}
+      operation: "shift",
+      spec: {}
     };
     
     // Parse the desired mapping and create shift operations
     Object.entries(desiredMapping).forEach(([sourcePath, targetPath]) => {
-      setNestedValue(shiftSpec.input, sourcePath, targetPath);
+      setNestedValue(shiftSpec.spec, sourcePath, targetPath);
     });
     
     const joltSpec = [
       {
         operation: "shift",
-        spec: shiftSpec
+        spec: shiftSpec.spec
       },
       {
         operation: "default",
@@ -197,13 +353,58 @@ export const setNestedValue = (obj, path, value) => {
   let current = obj;
   
   for (let i = 0; i < parts.length - 1; i++) {
-    if (!current[parts[i]]) {
-      current[parts[i]] = {};
+    const part = parts[i];
+    
+    // Check if this part has array notation like "loginIdentifiers[0]"
+    const arrayMatch = part.match(/^(.+)\[(\d+)\]$/);
+    
+    if (arrayMatch) {
+      const [, arrayName, indexStr] = arrayMatch;
+      const index = parseInt(indexStr, 10);
+      
+      // Create array if it doesn't exist
+      if (!current[arrayName]) {
+        current[arrayName] = [];
+      }
+      
+      // Ensure array has enough elements
+      while (current[arrayName].length <= index) {
+        current[arrayName].push({});
+      }
+      
+      current = current[arrayName][index];
+    } else {
+      // Regular object property
+      if (!current[part]) {
+        current[part] = {};
+      }
+      current = current[part];
     }
-    current = current[parts[i]];
   }
   
-  current[parts[parts.length - 1]] = value;
+  // Handle the final part (could also have array notation)
+  const finalPart = parts[parts.length - 1];
+  const finalArrayMatch = finalPart.match(/^(.+)\[(\d+)\]$/);
+  
+  if (finalArrayMatch) {
+    const [, arrayName, indexStr] = finalArrayMatch;
+    const index = parseInt(indexStr, 10);
+    
+    // Create array if it doesn't exist
+    if (!current[arrayName]) {
+      current[arrayName] = [];
+    }
+    
+    // Ensure array has enough elements
+    while (current[arrayName].length <= index) {
+      current[arrayName].push({});
+    }
+    
+    current[arrayName][index] = value;
+  } else {
+    // Regular property assignment
+    current[finalPart] = value;
+  }
 };
 
 /**
