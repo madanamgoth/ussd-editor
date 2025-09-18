@@ -276,7 +276,7 @@ export const exportToFlowFormat = (nodes, edges) => {
     return {
       nextNodeType: targetNode.data.type,
       nextNodePrompts: targetNode.data.config?.prompts || {},
-      nextNodeStoreAttribute: targetNode.data.config?.storeAttribute || null,
+      nextNodeStoreAttribute: targetNode.data.config?.storeAttribute || targetNode.data.config?.variableName || null,
       nextNodeTemplateId: targetNode.data.config?.templateId || null
     };
   };
@@ -349,17 +349,68 @@ export const exportToFlowFormat = (nodes, edges) => {
               }
             }
           } else if (nodeType === 'START') {
-            // For START nodes, use configured USSD code or skip if empty
+            // For START nodes, use configured USSD code or empty string like previous version
             let key = sourceHandle || '';
             
             // If node has configured USSD code, use it as the key
             if (node.data.config?.ussdCode && node.data.config.ussdCode.trim() !== '') {
               key = node.data.config.ussdCode.trim();
+            } else {
+              // Default to empty string for START nodes (previous version behavior)
+              key = '';
             }
             
-            // Only add transition if key is not empty
-            if (key && key.trim() !== '') {
-              cleanTransitions[key] = edge.target;
+            cleanTransitions[key] = edge.target;
+            if (metadata) {
+              nextNodeMetadata[key] = metadata;
+            }
+          }
+        }
+      });
+    }
+    
+    // Then, merge with any manually configured transitions (from config panel)
+    if (config.transitions) {
+      Object.entries(config.transitions).forEach(([key, value]) => {
+        if (value && value.trim() !== '') {
+          if (nodeType === 'MENU' || nodeType === 'DYNAMIC-MENU') {
+            // For MENU nodes, prefer the cleaned key format
+            const cleanKey = key.startsWith('option-') ? key.replace('option-', '') : key;
+            if (/^\d+$/.test(cleanKey) || cleanKey === 'fallback' || cleanKey === '*') {
+              cleanTransitions[cleanKey] = value;
+              // Get metadata for manually configured transitions
+              const metadata = getNextNodeMetadata(node.id, value);
+              if (metadata) {
+                nextNodeMetadata[cleanKey] = metadata;
+              }
+            }
+          } else if (nodeType === 'ACTION') {
+            // For ACTION nodes, prefer cleaned transaction codes
+            const cleanKey = key.startsWith('transaction-') ? key.replace('transaction-', '') : key;
+            if (['200', '400', '500', 'onSuccess', 'onError', 'onBadRequest'].includes(cleanKey)) {
+              cleanTransitions[cleanKey] = value;
+              // Get metadata for manually configured transitions
+              const metadata = getNextNodeMetadata(node.id, value);
+              if (metadata) {
+                nextNodeMetadata[cleanKey] = metadata;
+              }
+            }
+          } else if (nodeType === 'INPUT') {
+            // For INPUT nodes, allow '*' and other meaningful keys
+            if (key === '*' || (key && key.trim() !== '')) {
+              cleanTransitions[key] = value;
+              // Get metadata for manually configured transitions
+              const metadata = getNextNodeMetadata(node.id, value);
+              if (metadata) {
+                nextNodeMetadata[key] = metadata;
+              }
+            }
+          } else {
+            // For other node types, use as-is if not already set by edges
+            if (!cleanTransitions[key] && key && key.trim() !== '') {
+              cleanTransitions[key] = value;
+              // Get metadata for manually configured transitions
+              const metadata = getNextNodeMetadata(node.id, value);
               if (metadata) {
                 nextNodeMetadata[key] = metadata;
               }
@@ -368,58 +419,24 @@ export const exportToFlowFormat = (nodes, edges) => {
         }
       });
     }
-    
-    // Then, merge with any manually configured transitions (from config panel)
-    // This ensures manual configurations are preserved if they exist
-    if (config.transitions) {
-      Object.entries(config.transitions).forEach(([key, value]) => {
-        if (value && value.trim() !== '') {
-          if (nodeType === 'MENU') {
-            // For MENU nodes, prefer the cleaned key format
-            const cleanKey = key.startsWith('option-') ? key.replace('option-', '') : key;
-            if (/^\d+$/.test(cleanKey) || cleanKey === 'fallback' || cleanKey === '*') {
-              cleanTransitions[cleanKey] = value;
-            }
-          } else if (nodeType === 'DYNAMIC-MENU') {
-            // For DYNAMIC-MENU nodes, handle option transitions and menu mapping
-            const cleanKey = key.startsWith('option-') ? key.replace('option-', '') : key;
-            if (/^\d+$/.test(cleanKey) || cleanKey === 'fallback') {
-              cleanTransitions[cleanKey] = value;
-            }
-          } else if (nodeType === 'ACTION') {
-            // For ACTION nodes, prefer cleaned transaction codes
-            const cleanKey = key.startsWith('transaction-') ? key.replace('transaction-', '') : key;
-            if (['200', '400', '500', 'onSuccess', 'onError', 'onBadRequest'].includes(cleanKey)) {
-              cleanTransitions[cleanKey] = value;
-            }
-          } else if (nodeType === 'INPUT') {
-            // For INPUT nodes, only allow '*' and other non-empty meaningful keys
-            if (key === '*' || (key && key.trim() !== '' && key !== '')) {
-              cleanTransitions[key] = value;
-            }
-          } else {
-            // For other node types, use as-is if not already set by edges and key is not empty
-            if (!cleanTransitions[key] && key && key.trim() !== '') {
-              cleanTransitions[key] = value;
-            }
-          }
-        }
-      });
-    }
 
-    // Build the clean node object with next node metadata only
+    // Build the clean node object - EXACTLY as previous version
     const cleanNode = {
       id: node.id,
       type: nodeType,
       transitions: cleanTransitions
     };
 
-    // Add next node metadata for NiFi optimization
-    // For nodes with single transition (like START, INPUT), use the primary next node's prompts
+    // Add next node metadata based on node type and expected format
     const transitionKeys = Object.keys(cleanTransitions);
-    if (transitionKeys.length === 1) {
-      // Single transition - use next node's prompts as primary prompts
-      const primaryKey = transitionKeys[0];
+    
+    // Determine format based on node type - not transition count
+    // START and INPUT nodes use direct nextNodeType/nextNodePrompts format
+    // MENU, ACTION, DYNAMIC-MENU nodes ALWAYS use nextNodesMetadata format (even with single transitions)
+    // END nodes have no next node metadata
+    if ((nodeType === 'START' || nodeType === 'INPUT') && transitionKeys.length > 0) {
+      // Use direct format for START and INPUT nodes (single target semantics)
+      const primaryKey = transitionKeys[0]; // Take first transition as primary
       const metadata = nextNodeMetadata[primaryKey];
       if (metadata) {
         cleanNode.nextNodeType = metadata.nextNodeType;
@@ -431,8 +448,8 @@ export const exportToFlowFormat = (nodes, edges) => {
           cleanNode.nextNodeTemplateId = metadata.nextNodeTemplateId;
         }
       }
-    } else if (transitionKeys.length > 1) {
-      // Multiple transitions - include metadata for each transition
+    } else if ((nodeType === 'MENU' || nodeType === 'ACTION' || nodeType === 'DYNAMIC-MENU') && transitionKeys.length > 0) {
+      // Use nextNodesMetadata format for MENU, ACTION, DYNAMIC-MENU nodes (ALWAYS, even with single transitions)
       cleanNode.nextNodesMetadata = {};
       transitionKeys.forEach(key => {
         if (nextNodeMetadata[key]) {
@@ -462,27 +479,8 @@ export const exportToFlowFormat = (nodes, edges) => {
       }
     }
     
-    // For DYNAMIC-MENU nodes, include API configuration and menu mapping
-    if (nodeType === 'DYNAMIC-MENU') {
-      if (config.dataSource) {
-        cleanNode.dataSource = config.dataSource;
-      }
-      if (config.apiConfig) {
-        cleanNode.apiConfig = config.apiConfig;
-      }
-      if (config.menuMapping) {
-        cleanNode.menuMapping = config.menuMapping;
-      }
-      if (config.routingStrategy) {
-        cleanNode.routingStrategy = config.routingStrategy;
-      }
-      if (config.maxMenuItems) {
-        cleanNode.maxMenuItems = config.maxMenuItems;
-      }
-    }
-    
-    if (config.fallback && config.fallback.trim() !== '' && nodeType !== 'MENU' && nodeType !== 'DYNAMIC-MENU') {
-      // For MENU and DYNAMIC-MENU nodes, fallback is already in transitions
+    if (config.fallback && config.fallback.trim() !== '' && nodeType !== 'MENU') {
+      // For MENU nodes, fallback is already in transitions (previous version behavior)
       cleanNode.fallback = config.fallback;
     }
 
