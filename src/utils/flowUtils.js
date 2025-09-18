@@ -335,12 +335,12 @@ export const exportToFlowFormat = (nodes, edges) => {
               }
             }
           } else if (nodeType === 'DYNAMIC-MENU') {
-            // For DYNAMIC-MENU nodes, handle option connections similar to MENU
-            if (sourceHandle.startsWith('option-')) {
-              const optionNumber = sourceHandle.replace('option-', '');
-              cleanTransitions[optionNumber] = edge.target;
+            // For DYNAMIC-MENU nodes, handle simplified connections
+            if (sourceHandle === 'dynamic-output') {
+              // Main dynamic output - runtime routing handled by routing strategy
+              cleanTransitions['*'] = edge.target;
               if (metadata) {
-                nextNodeMetadata[optionNumber] = metadata;
+                nextNodeMetadata['*'] = metadata;
               }
             } else if (sourceHandle === 'fallback') {
               cleanTransitions['fallback'] = edge.target;
@@ -373,7 +373,7 @@ export const exportToFlowFormat = (nodes, edges) => {
     if (config.transitions) {
       Object.entries(config.transitions).forEach(([key, value]) => {
         if (value && value.trim() !== '') {
-          if (nodeType === 'MENU' || nodeType === 'DYNAMIC-MENU') {
+          if (nodeType === 'MENU') {
             // For MENU nodes, prefer the cleaned key format
             const cleanKey = key.startsWith('option-') ? key.replace('option-', '') : key;
             if (/^\d+$/.test(cleanKey) || cleanKey === 'fallback' || cleanKey === '*') {
@@ -382,6 +382,16 @@ export const exportToFlowFormat = (nodes, edges) => {
               const metadata = getNextNodeMetadata(node.id, value);
               if (metadata) {
                 nextNodeMetadata[cleanKey] = metadata;
+              }
+            }
+          } else if (nodeType === 'DYNAMIC-MENU') {
+            // For DYNAMIC-MENU nodes, only allow '*' (main output) and 'fallback'
+            if (key === '*' || key === 'fallback') {
+              cleanTransitions[key] = value;
+              // Get metadata for manually configured transitions
+              const metadata = getNextNodeMetadata(node.id, value);
+              if (metadata) {
+                nextNodeMetadata[key] = metadata;
               }
             }
           } else if (nodeType === 'ACTION') {
@@ -479,6 +489,25 @@ export const exportToFlowFormat = (nodes, edges) => {
       }
     }
     
+    // Add dynamic menu fields if they exist (for ACTION nodes)
+    if (nodeType === 'ACTION') {
+      if (config.templateId) {
+        cleanNode.templateId = config.templateId;
+      }
+      if (config.sessionSpec) {
+        cleanNode.sessionSpec = config.sessionSpec;
+      }
+      if (config.menuName) {
+        cleanNode.menuName = config.menuName;
+      }
+      if (config.menuJolt) {
+        cleanNode.menuJolt = config.menuJolt;
+      }
+      if (config.isNextMenuDynamic) {
+        cleanNode.isNextMenuDynamic = config.isNextMenuDynamic;
+      }
+    }
+    
     if (config.fallback && config.fallback.trim() !== '' && nodeType !== 'MENU') {
       // For MENU nodes, fallback is already in transitions (previous version behavior)
       cleanNode.fallback = config.fallback;
@@ -510,6 +539,23 @@ export const importFromFlowFormat = (flowData) => {
     
     if (flowNode.templateId) {
       node.data.config.templateId = flowNode.templateId;
+    }
+    
+    // Import dynamic menu fields for Action nodes
+    if (flowNode.templateId) {
+      node.data.config.templateId = flowNode.templateId;
+    }
+    if (flowNode.sessionSpec) {
+      node.data.config.sessionSpec = flowNode.sessionSpec;
+    }
+    if (flowNode.menuName) {
+      node.data.config.menuName = flowNode.menuName;
+    }
+    if (flowNode.menuJolt) {
+      node.data.config.menuJolt = flowNode.menuJolt;
+    }
+    if (flowNode.isNextMenuDynamic) {
+      node.data.config.isNextMenuDynamic = flowNode.isNextMenuDynamic;
     }
 
     return node;

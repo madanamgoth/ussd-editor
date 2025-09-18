@@ -9,7 +9,7 @@
  * @returns {Object} Clean template for NiFi consumption
  */
 export const createNiFiTemplate = (templateData) => {
-  return {
+  const cleanTemplate = {
     ...templateData,
     requestTemplate: {
       joltSpec: templateData.requestTemplate?.joltSpec || []
@@ -22,6 +22,25 @@ export const createNiFiTemplate = (templateData) => {
       joltSpec: templateData.responseErrorTemplate?.joltSpec || []
     }
   };
+  
+  // Preserve dynamic menu fields for USSD flow integration
+  if (templateData.templateId) {
+    cleanTemplate.templateId = templateData.templateId;
+  }
+  if (templateData.sessionSpec) {
+    cleanTemplate.sessionSpec = templateData.sessionSpec;
+  }
+  if (templateData.menuName) {
+    cleanTemplate.menuName = templateData.menuName;
+  }
+  if (templateData.menuJolt) {
+    cleanTemplate.menuJolt = templateData.menuJolt;
+  }
+  if (templateData.isNextMenuDynamic) {
+    cleanTemplate.isNextMenuDynamic = templateData.isNextMenuDynamic;
+  }
+  
+  return cleanTemplate;
 };
 
 /**

@@ -313,6 +313,22 @@ const NodeConfigPanel = ({ selectedNode, onUpdateNode, onClose, allNodes = [] })
       } else if (selectedNode.data.type === 'ACTION') {
         updatedConfig.templates = config.templates;
         updatedConfig.transactionCodes = config.transactionCodes;
+        // Include dynamic menu fields if they exist
+        if (config.templateId) {
+          updatedConfig.templateId = config.templateId;
+        }
+        if (config.sessionSpec) {
+          updatedConfig.sessionSpec = config.sessionSpec;
+        }
+        if (config.menuName) {
+          updatedConfig.menuName = config.menuName;
+        }
+        if (config.menuJolt) {
+          updatedConfig.menuJolt = config.menuJolt;
+        }
+        if (config.isNextMenuDynamic) {
+          updatedConfig.isNextMenuDynamic = config.isNextMenuDynamic;
+        }
       } else if (selectedNode.data.type === 'START') {
         updatedConfig.ussdCode = config.ussdCode;
       }
@@ -355,10 +371,33 @@ const NodeConfigPanel = ({ selectedNode, onUpdateNode, onClose, allNodes = [] })
   };
 
   const handleCreateTemplate = (templateData) => {
-    setConfig(prev => ({
-      ...prev,
-      templates: [...prev.templates, templateData]
-    }));
+    // Add template to the list
+    const updatedTemplates = [...config.templates, templateData];
+    
+    // If this template has dynamic menu fields, add them to the Action node config
+    const updatedConfig = {
+      ...config,
+      templates: updatedTemplates
+    };
+    
+    // Transfer dynamic menu fields from template to Action node config
+    if (templateData.templateId) {
+      updatedConfig.templateId = templateData.templateId;
+    }
+    if (templateData.sessionSpec) {
+      updatedConfig.sessionSpec = templateData.sessionSpec;
+    }
+    if (templateData.menuName) {
+      updatedConfig.menuName = templateData.menuName;
+    }
+    if (templateData.menuJolt) {
+      updatedConfig.menuJolt = templateData.menuJolt;
+    }
+    if (templateData.isNextMenuDynamic) {
+      updatedConfig.isNextMenuDynamic = templateData.isNextMenuDynamic;
+    }
+    
+    setConfig(updatedConfig);
     setShowTemplateCreator(false);
   };
 
@@ -590,456 +629,16 @@ const NodeConfigPanel = ({ selectedNode, onUpdateNode, onClose, allNodes = [] })
 
         {selectedNode.data.type === 'DYNAMIC-MENU' && (
           <>
-            {/* Data Source Configuration */}
+            {/* Simplified Dynamic Menu - Routing handled by backend */}
             <div className="config-section">
               <div className="section-header">
-                <label>📊 Data Source Configuration</label>
+                <label>📱 Dynamic Menu Node</label>
               </div>
-              <div className="data-source-config">
-                <div className="config-row">
-                  <label>Data Source Type:</label>
-                  <select
-                    value={config.dataSource.type}
-                    onChange={(e) => setConfig(prev => ({
-                      ...prev,
-                      dataSource: { ...prev.dataSource, type: e.target.value }
-                    }))}
-                  >
-                    <option value="session">Session Variable (from previous Action node)</option>
-                    <option value="api">Direct API Call</option>
-                  </select>
-                </div>
-                
-                {config.dataSource.type === 'session' && (
-                  <>
-                    <div className="config-row">
-                      <label>Session Variable Name:</label>
-                      <input
-                        type="text"
-                        value={config.dataSource.sessionVariable}
-                        onChange={(e) => setConfig(prev => ({
-                          ...prev,
-                          dataSource: { ...prev.dataSource, sessionVariable: e.target.value }
-                        }))}
-                        placeholder="e.g., billerListResponse, actionNodeResult"
-                      />
-                      <small className="config-hint">
-                        Variable name where the previous Action node stored the API response
-                      </small>
-                    </div>
-                    
-                    <div className="config-row">
-                      <label>Data Path in Session Variable:</label>
-                      <input
-                        type="text"
-                        value={config.dataSource.responseKey}
-                        onChange={(e) => setConfig(prev => ({
-                          ...prev,
-                          dataSource: { ...prev.dataSource, responseKey: e.target.value }
-                        }))}
-                        placeholder="data or result.items"
-                      />
-                      <small className="config-hint">
-                        Path to the array within the session variable (e.g., "data" if response is {`{data: [...]}`})
-                      </small>
-                    </div>
-                    
-                    <div className="config-row">
-                      <label>Name Field:</label>
-                      <input
-                        type="text"
-                        value={config.dataSource.nameField}
-                        onChange={(e) => setConfig(prev => ({
-                          ...prev,
-                          dataSource: { ...prev.dataSource, nameField: e.target.value }
-                        }))}
-                        placeholder="name or title"
-                      />
-                    </div>
-                    
-                    <div className="config-row">
-                      <label>ID Field:</label>
-                      <input
-                        type="text"
-                        value={config.dataSource.idField}
-                        onChange={(e) => setConfig(prev => ({
-                          ...prev,
-                          dataSource: { ...prev.dataSource, idField: e.target.value }
-                        }))}
-                        placeholder="id or code"
-                      />
-                    </div>
-                    
-                    {/* Advanced Parsing Options */}
-                    <div className="advanced-options">
-                      <h4>🔧 Advanced Options</h4>
-                      
-                      <div className="config-row">
-                        <label>Filter Field (optional):</label>
-                        <input
-                          type="text"
-                          value={config.dataSource.filterField}
-                          onChange={(e) => setConfig(prev => ({
-                            ...prev,
-                            dataSource: { ...prev.dataSource, filterField: e.target.value }
-                          }))}
-                          placeholder="status, type, active"
-                        />
-                      </div>
-                      
-                      <div className="config-row">
-                        <label>Filter Value (optional):</label>
-                        <input
-                          type="text"
-                          value={config.dataSource.filterValue}
-                          onChange={(e) => setConfig(prev => ({
-                            ...prev,
-                            dataSource: { ...prev.dataSource, filterValue: e.target.value }
-                          }))}
-                          placeholder="active, enabled, true"
-                        />
-                      </div>
-                      
-                      <div className="config-row">
-                        <label>Sort By (optional):</label>
-                        <input
-                          type="text"
-                          value={config.dataSource.sortBy}
-                          onChange={(e) => setConfig(prev => ({
-                            ...prev,
-                            dataSource: { ...prev.dataSource, sortBy: e.target.value }
-                          }))}
-                          placeholder="name, priority, order"
-                        />
-                      </div>
-                      
-                      <div className="config-row">
-                        <label>Sort Order:</label>
-                        <select
-                          value={config.dataSource.sortOrder}
-                          onChange={(e) => setConfig(prev => ({
-                            ...prev,
-                            dataSource: { ...prev.dataSource, sortOrder: e.target.value }
-                          }))}
-                        >
-                          <option value="asc">Ascending</option>
-                          <option value="desc">Descending</option>
-                        </select>
-                      </div>
-                    </div>
-                  </>
-                )}
-                
-                {config.dataSource.type === 'api' && (
-                  <>
-                    <div className="config-row">
-                      <label>Method:</label>
-                      <select
-                        value={config.apiConfig.method}
-                        onChange={(e) => setConfig(prev => ({
-                          ...prev,
-                          apiConfig: { ...prev.apiConfig, method: e.target.value }
-                        }))}
-                      >
-                        <option value="GET">GET</option>
-                        <option value="POST">POST</option>
-                      </select>
-                    </div>
-                    
-                    <div className="config-row">
-                      <label>API Endpoint:</label>
-                      <input
-                        type="text"
-                        value={config.apiConfig.endpoint}
-                        onChange={(e) => setConfig(prev => ({
-                          ...prev,
-                          apiConfig: { ...prev.apiConfig, endpoint: e.target.value }
-                        }))}
-                        placeholder="https://api.example.com/billers"
-                      />
-                    </div>
-                    
-                    <div className="config-row">
-                      <label>Response Key (path to array):</label>
-                      <input
-                        type="text"
-                        value={config.apiConfig.responseKey}
-                        onChange={(e) => setConfig(prev => ({
-                          ...prev,
-                          apiConfig: { ...prev.apiConfig, responseKey: e.target.value }
-                        }))}
-                        placeholder="data or result.items"
-                      />
-                    </div>
-                    
-                    <div className="config-row">
-                      <label>Name Field:</label>
-                      <input
-                        type="text"
-                        value={config.apiConfig.nameField}
-                        onChange={(e) => setConfig(prev => ({
-                          ...prev,
-                          apiConfig: { ...prev.apiConfig, nameField: e.target.value }
-                        }))}
-                        placeholder="name or title"
-                      />
-                    </div>
-                    
-                    <div className="config-row">
-                      <label>ID Field:</label>
-                      <input
-                        type="text"
-                        value={config.apiConfig.idField}
-                        onChange={(e) => setConfig(prev => ({
-                          ...prev,
-                          apiConfig: { ...prev.apiConfig, idField: e.target.value }
-                        }))}
-                        placeholder="id or code"
-                      />
-                    </div>
-                  </>
-                )}
-                
-                <div className="config-row">
-                  <label>Max Menu Items:</label>
-                  <input
-                    type="number"
-                    value={config.maxMenuItems}
-                    onChange={(e) => setConfig(prev => ({ ...prev, maxMenuItems: parseInt(e.target.value) || 10 }))}
-                    min="1"
-                    max="20"
-                  />
-                </div>
+              <div className="info-box">
+                <p>This Dynamic Menu node will automatically generate menu options from session data.</p>
+                <p>📋 <strong>Data Source:</strong> Session variables from previous Action nodes</p>
+                <p>🎯 <strong>Routing:</strong> Handled dynamically by backend based on user selection</p>
               </div>
-            </div>
-            
-            {/* Routing Strategy Section */}
-            <div className="config-section">
-              <div className="section-header">
-                <label>🎯 Dynamic Routing Strategy</label>
-              </div>
-              <div className="routing-strategy-config">
-                <p className="strategy-explanation">
-                  Configure how dynamic menu options connect to next nodes when the number of options can change.
-                  <br/><br/>
-                  <strong>Examples:</strong><br/>
-                  • <strong>Single Target:</strong> All billers → Amount Input<br/>
-                  • <strong>Conditional:</strong> Mobile Money → Phone Input, Utilities → Account Input<br/>
-                  • <strong>Fixed:</strong> Option 1 → Premium Flow, Options 2-4 → Standard Flow
-                </p>
-                
-                <div className="config-row">
-                  <label>Routing Type:</label>
-                  <select
-                    value={config.routingStrategy.type}
-                    onChange={(e) => setConfig(prev => ({
-                      ...prev,
-                      routingStrategy: { ...prev.routingStrategy, type: e.target.value }
-                    }))}
-                  >
-                    <option value="single">Single Target - All options go to same node</option>
-                    <option value="conditional">Conditional - Route based on item properties</option>
-                    <option value="fixed">Fixed Mapping - Predefined option numbers</option>
-                  </select>
-                </div>
-                
-                {config.routingStrategy.type === 'single' && (
-                  <div className="config-row">
-                    <label>Target Node:</label>
-                    <input
-                      type="text"
-                      value={config.routingStrategy.singleTarget}
-                      onChange={(e) => setConfig(prev => ({
-                        ...prev,
-                        routingStrategy: { ...prev.routingStrategy, singleTarget: e.target.value }
-                      }))}
-                      placeholder="node_id_for_all_options"
-                    />
-                    <small className="config-hint">
-                      All menu selections will go to this node. Selected item data will be stored in session.
-                    </small>
-                  </div>
-                )}
-                
-                {config.routingStrategy.type === 'conditional' && (
-                  <div className="conditional-rules">
-                    <label>Conditional Rules:</label>
-                    <div className="examples-hint">
-                      <strong>Example conditions:</strong><br/>
-                      • <code>item.type === 'mobile_money'</code><br/>
-                      • <code>item.requiresAccount === true</code><br/>
-                      • <code>item.category === 'utility'</code><br/>
-                      • <code>item.fee &gt; 0</code>
-                    </div>
-                    {config.routingStrategy.conditionalRules.map((rule, index) => (
-                      <div key={index} className="rule-item">
-                        <div className="rule-inputs">
-                          <input
-                            type="text"
-                            value={rule.condition}
-                            onChange={(e) => {
-                              const newRules = [...config.routingStrategy.conditionalRules];
-                              newRules[index].condition = e.target.value;
-                              setConfig(prev => ({
-                                ...prev,
-                                routingStrategy: { ...prev.routingStrategy, conditionalRules: newRules }
-                              }));
-                            }}
-                            placeholder="item.type === 'mobile_money'"
-                          />
-                          <input
-                            type="text"
-                            value={rule.targetNode}
-                            onChange={(e) => {
-                              const newRules = [...config.routingStrategy.conditionalRules];
-                              newRules[index].targetNode = e.target.value;
-                              setConfig(prev => ({
-                                ...prev,
-                                routingStrategy: { ...prev.routingStrategy, conditionalRules: newRules }
-                              }));
-                            }}
-                            placeholder="target_node_id"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newRules = config.routingStrategy.conditionalRules.filter((_, i) => i !== index);
-                            setConfig(prev => ({
-                              ...prev,
-                              routingStrategy: { ...prev.routingStrategy, conditionalRules: newRules }
-                            }));
-                          }}
-                          className="remove-btn"
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const newRules = [...config.routingStrategy.conditionalRules, { condition: '', targetNode: '' }];
-                        setConfig(prev => ({
-                          ...prev,
-                          routingStrategy: { ...prev.routingStrategy, conditionalRules: newRules }
-                        }));
-                      }}
-                      className="add-btn"
-                    >
-                      ➕ Add Rule
-                    </button>
-                    
-                    <div className="config-row">
-                      <label>Default Target (when no rules match):</label>
-                      <input
-                        type="text"
-                        value={config.routingStrategy.defaultTarget}
-                        onChange={(e) => setConfig(prev => ({
-                          ...prev,
-                          routingStrategy: { ...prev.routingStrategy, defaultTarget: e.target.value }
-                        }))}
-                        placeholder="default_node_id"
-                      />
-                    </div>
-                  </div>
-                )}
-                
-                {config.routingStrategy.type === 'fixed' && (
-                  <div className="fixed-mapping">
-                    <label>Fixed Option Mapping:</label>
-                    <p className="mapping-explanation">
-                      Define where each option number should route. Unused numbers will use fallback.
-                    </p>
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(optionNum => (
-                      <div key={optionNum} className="mapping-item">
-                        <label>Option {optionNum}:</label>
-                        <input
-                          type="text"
-                          value={config.routingStrategy.fixedMapping[optionNum] || ''}
-                          onChange={(e) => {
-                            const newMapping = { ...config.routingStrategy.fixedMapping };
-                            if (e.target.value) {
-                              newMapping[optionNum] = e.target.value;
-                            } else {
-                              delete newMapping[optionNum];
-                            }
-                            setConfig(prev => ({
-                              ...prev,
-                              routingStrategy: { ...prev.routingStrategy, fixedMapping: newMapping }
-                            }));
-                          }}
-                          placeholder="target_node_id"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            
-            {/* Menu Mapping Section - Legacy */}
-            <div className="config-section legacy-section">
-              <div className="section-header">
-                <label>🔀 Legacy Menu Option Mapping</label>
-                <small>(Use Routing Strategy above instead)</small>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const newOption = Object.keys(config.menuMapping).length + 1;
-                    setConfig(prev => ({
-                      ...prev,
-                      menuMapping: { ...prev.menuMapping, [newOption]: '' }
-                    }));
-                  }}
-                  className="add-btn"
-                >
-                  ➕ Add Option
-                </button>
-              </div>
-              <div className="menu-mapping-config">
-                <p className="mapping-explanation">
-                  Configure where each dynamic menu option should connect to based on user selection.
-                </p>
-                {Object.entries(config.menuMapping).map(([option, nodeId]) => (
-                  <div key={option} className="mapping-item">
-                    <label>Option {option}:</label>
-                    <input
-                      type="text"
-                      value={nodeId}
-                      onChange={(e) => setConfig(prev => ({
-                        ...prev,
-                        menuMapping: { ...prev.menuMapping, [option]: e.target.value }
-                      }))}
-                      placeholder="Target node ID"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const newMapping = { ...config.menuMapping };
-                        delete newMapping[option];
-                        setConfig(prev => ({ ...prev, menuMapping: newMapping }));
-                      }}
-                      className="remove-btn"
-                    >
-                      🗑️
-                    </button>
-                  </div>
-                ))}
-                {Object.keys(config.menuMapping).length === 0 && (
-                  <p className="no-mapping">No menu mappings configured. Add options above.</p>
-                )}
-              </div>
-            </div>
-            
-            <div className="config-section">
-              <label>Fallback Node ID:</label>
-              <input
-                type="text"
-                value={config.fallback}
-                onChange={(e) => setConfig(prev => ({ ...prev, fallback: e.target.value }))}
-                placeholder="Enter fallback node ID for invalid selections"
-              />
             </div>
           </>
         )}

@@ -9,54 +9,7 @@ const DynamicMenuNode = memo(({ data, isConnectable, selected }) => {
   // Get API configuration
   const apiConfig = config.apiConfig || {};
   const dataSource = config.dataSource || {};
-  const menuMapping = config.menuMapping || {};
-  
-  // Create handles for different scenarios
-  const createMenuHandles = () => {
-    const handles = [];
-    
-    // Default connection handles for design time
-    for (let i = 1; i <= (config.maxMenuItems || 5); i++) {
-      handles.push(
-        <Handle
-          key={`option-${i}`}
-          id={`option-${i}`}
-          type="source"
-          position={Position.Right}
-          style={{
-            top: `${20 + (i * 15)}%`,
-            background: '#4ade80',
-            border: '2px solid #22c55e',
-            width: '12px',
-            height: '12px'
-          }}
-          isConnectable={isConnectable}
-          title={`Menu Option ${i} connection`}
-        />
-      );
-    }
-    
-    // Fallback handle for invalid selections
-    handles.push(
-      <Handle
-        key="fallback"
-        id="fallback"
-        type="source"
-        position={Position.Right}
-        style={{
-          bottom: '10px',
-          background: '#f87171',
-          border: '2px solid #ef4444',
-          width: '12px',
-          height: '12px'
-        }}
-        isConnectable={isConnectable}
-        title="Fallback for invalid selections"
-      />
-    );
-    
-    return handles;
-  };
+  const routingStrategy = config.routingStrategy || {};
 
   return (
     <div className={`flow-node dynamic-menu-node ${selected ? 'selected' : ''}`}>
@@ -100,29 +53,59 @@ const DynamicMenuNode = memo(({ data, isConnectable, selected }) => {
           )}
           {(dataSource.nameField || apiConfig.nameField) && (
             <div className="field-mapping">
-              � Name: {dataSource.nameField || apiConfig.nameField} | ID: {dataSource.idField || apiConfig.idField}
+              🏷️ Name: {dataSource.nameField || apiConfig.nameField} | ID: {dataSource.idField || apiConfig.idField}
             </div>
           )}
         </div>
         
-        {/* Menu Mapping Info */}
-        {Object.keys(menuMapping).length > 0 && (
-          <div className="menu-mapping-info">
-            <div className="mapping-title">Menu Mappings:</div>
-            {Object.entries(menuMapping).slice(0, 3).map(([condition, nodeId]) => (
-              <div key={condition} className="mapping-item">
-                {condition}: → {nodeId}
-              </div>
-            ))}
-            {Object.keys(menuMapping).length > 3 && (
-              <div className="mapping-more">...and {Object.keys(menuMapping).length - 3} more</div>
-            )}
+        {/* Routing Strategy Info */}
+        <div className="routing-info">
+          <div className="routing-title">Routing Strategy:</div>
+          <div className="routing-type">
+            {routingStrategy.type === 'single' && '🎯 Single Target'}
+            {routingStrategy.type === 'conditional' && '🔀 Conditional Routing'}
+            {routingStrategy.type === 'fixed' && '📌 Fixed Mapping'}
+            {!routingStrategy.type && '⚙️ Not configured'}
           </div>
-        )}
+          {routingStrategy.type === 'single' && routingStrategy.singleTarget && (
+            <div className="target-info">→ {routingStrategy.singleTarget}</div>
+          )}
+        </div>
       </div>
       
-      {/* Output handles */}
-      {createMenuHandles()}
+      {/* Single output handle - dynamic routing handled internally */}
+      <Handle
+        key="dynamic-output"
+        id="dynamic-output"
+        type="source"
+        position={Position.Right}
+        style={{
+          top: '50%',
+          background: '#4ade80',
+          border: '2px solid #22c55e',
+          width: '12px',
+          height: '12px'
+        }}
+        isConnectable={isConnectable}
+        title="Dynamic menu selection output"
+      />
+      
+      {/* Fallback handle for errors/invalid selections */}
+      <Handle
+        key="fallback"
+        id="fallback"
+        type="source"
+        position={Position.Right}
+        style={{
+          bottom: '15px',
+          background: '#f87171',
+          border: '2px solid #ef4444',
+          width: '12px',
+          height: '12px'
+        }}
+        isConnectable={isConnectable}
+        title="Fallback for invalid selections or errors"
+      />
     </div>
   );
 });

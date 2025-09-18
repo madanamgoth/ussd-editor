@@ -804,10 +804,65 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
       }
       
       // Use Enhanced JOLT Generator with raw response for dynamic menu support
-      const result = generateResponseJolt(rawResponse, enhancedDesiredOutput, {
-        isDynamicMenuNext: isDynamicMenuNext,
-        originalResponse: rawResponse
-      });
+      let result;
+      if (isDynamicMenuNext && selectedArrayConfig.selectedArray !== null) {
+        // For dynamic menu, use the nested input.[arrayName].* format
+        const sessionVarName = selectedArrayConfig.customSessionName || selectedArrayConfig.sessionVariable;
+        const displayKey = selectedArrayConfig.displayKey || 'name';
+        
+        // Get the actual array name from the selected array configuration
+        const detectedArrays = analyzeArraysInResponse(rawResponse);
+        let actualArrayName = 'data'; // fallback
+        
+        if (detectedArrays.length > 0 && selectedArrayConfig.selectedArray < detectedArrays.length) {
+          const selectedArray = detectedArrays[selectedArrayConfig.selectedArray];
+          // Extract the array name from the path (e.g., "laptops" from "laptops[0]")
+          actualArrayName = selectedArray.path.split('[')[0];
+          console.log('🔍 Using actual array name from response:', actualArrayName);
+        }
+        
+        // Build the shift spec using the configured desired output mappings
+        const shiftSpec = {
+          "input": {}
+        };
+        
+        // Add non-array mappings from desired output
+        Object.entries(desiredOutput).forEach(([sourcePath, targetPath]) => {
+          if (sourcePath !== actualArrayName && typeof targetPath === 'string') {
+            shiftSpec.input[sourcePath] = targetPath;
+          }
+        });
+        
+        // Add the array mapping for dynamic menu
+        shiftSpec.input[actualArrayName] = {
+          "*": {
+            "@": `${sessionVarName}[]`,
+            [displayKey]: `${sessionVarName.replace(/_items$/, '')}_menu_raw[]`
+          }
+        };
+        
+        result = [
+          {
+            "operation": "shift",
+            "spec": shiftSpec
+          },
+          {
+            "operation": "default",
+            "spec": {
+              "success": true,
+              "timestamp": new Date().toISOString(),
+              "status": "SUCCEEDED"
+            }
+          }
+        ];
+        console.log('🎯 Generated dynamic menu JOLT with configured mappings:', result);
+      } else {
+        // Use standard JOLT generator for non-dynamic menu cases
+        result = generateResponseJolt(rawResponse, enhancedDesiredOutput, {
+          isDynamicMenuNext: isDynamicMenuNext,
+          originalResponse: rawResponse
+        });
+      }
       
       setResponseMapping(prev => ({
         ...prev,
@@ -1174,11 +1229,102 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
   };
 
   const handleSave = () => {
+    // Prepare the template data with dynamic menu fields if enabled
+    let finalTemplateData = { ...templateData };
+    
+    if (isDynamicMenuNext) {
+      // Generate session spec for dynamic menu
+      const templateId = templateData._id || 'TEMPLATE_ID';
+      
+      // Use the session variable name from array configuration
+      // This should match the session variable name from the template configuration
+      let menuArrayName;
+      if (selectedArrayConfig.sessionVariable) {
+        menuArrayName = selectedArrayConfig.sessionVariable;
+      } else if (selectedArrayConfig.customSessionName) {
+        menuArrayName = selectedArrayConfig.customSessionName;
+      } else {
+        // Default fallback - extract from the displayed array preview
+        menuArrayName = 'items_menu_book_items';
+      }
+      
+      console.log('🔍 Using menuArrayName for sessionSpec:', menuArrayName);
+      
+      // Generate menu JOLT transformation based on the pattern: {sessionVariable}_menu_raw
+      let menuJoltKey;
+      if (selectedArrayConfig.customSessionName) {
+        menuJoltKey = `${selectedArrayConfig.customSessionName}_menu_raw`;
+      } else if (selectedArrayConfig.sessionVariable) {
+        // Remove _items suffix if present and add _menu_raw
+        const baseName = selectedArrayConfig.sessionVariable.replace(/_items$/, '');
+        menuJoltKey = `${baseName}_menu_raw`;
+      } else {
+        menuJoltKey = 'items_menu_book_menu_raw';
+      }
+      
+      // Generate menu JOLT transformation
+      const menuJolt = [
+        {
+          "operation": "shift",
+          "spec": {
+            [menuJoltKey]: {
+              "*": "menu.&1"
+            }
+          }
+        }
+      ];
+      
+      const sessionSpec = [
+        {
+          "operation": "shift",
+          "spec": {
+            "*": {
+              "*": "&"
+            }
+          }
+        },
+        {
+          "operation": "shift", 
+          "spec": {
+            "*": "&",
+            [menuArrayName]: {
+              "*": {
+                "@": `${templateId}.&`
+              }
+            }
+          }
+        },
+        {
+          "operation": "modify-overwrite-beta",
+          "spec": {
+            "currentNode": "@(1,latestCurrentNode)",
+            [templateId]: "=recursivelySortKeys"
+          }
+        },
+        {
+          "operation": "remove",
+          "spec": {
+            [menuArrayName]: "",
+            "latestCurrentNode": ""
+          }
+        }
+      ];
+      
+      finalTemplateData = {
+        ...finalTemplateData,
+        templateId: templateId,
+        sessionSpec: JSON.stringify(sessionSpec),
+        menuName: menuJoltKey,
+        menuJolt: JSON.stringify(menuJolt),
+        isNextMenuDynamic: "Y"
+      };
+    }
+    
     // Save through parent component (localStorage)
-    onCreate(templateData);
+    onCreate(finalTemplateData);
     
     // Also auto-save to project folder
-    const result = autoSaveTemplate(templateData);
+    const result = autoSaveTemplate(finalTemplateData);
     if (result.success) {
       console.log('✅ Template auto-saved:', result.message);
     } else {
@@ -1366,147 +1512,6 @@ curl -X PUT 'http://api.example.com/endpoint' \\
           </div>
         </div>
       )}
-      
-      {/* Session Data Configuration */}
-      <div className="session-data-config">
-        <h4>🔗 Configure Session Data from Previous APIs</h4>
-        <p>Select data from previous API responses to use in this new API call</p>
-        
-        <div className="session-config-grid">
-          <div className="available-session-data">
-            <h5>📥 Available Session Data:</h5>
-            <div className="session-data-list">
-              {(() => {
-                console.log('🔍 Rendering session data list, safeAvailableVariables:', safeAvailableVariables);
-                console.log('🔍 safeAvailableVariables type:', typeof safeAvailableVariables);
-                console.log('🔍 safeAvailableVariables isArray:', Array.isArray(safeAvailableVariables));
-                
-                if (safeAvailableVariables && Array.isArray(safeAvailableVariables) && safeAvailableVariables.length > 0) {
-                  console.log('🔍 Rendering variables:', safeAvailableVariables);
-                  return safeAvailableVariables
-                    .filter(variable => {
-                      console.log('🔍 Filtering variable:', variable, 'type:', typeof variable);
-                      return variable !== null && variable !== undefined;
-                    })
-                    .map((variable, index) => {
-                      console.log('🔍 Mapping variable:', variable, 'index:', index);
-                      const sessionVar = safeRender("{{" + safeRender(variable) + "}}");
-                      console.log('🔍 Generated sessionVar:', sessionVar);
-                      
-                      return (
-                        <div key={`session-var-${index}`} className="session-data-item">
-                          <span className="session-variable">{sessionVar}</span>
-                          <span className="session-description">{safeRender("User input variable")}</span>
-                        </div>
-                      );
-                    });
-                } else {
-                  console.log('🔍 Rendering no-session-data fallback');
-                  return (
-                    <div className="no-session-data">
-                      <span>{safeRender("No session variables available yet")}</span>
-                      <small>{safeRender("Add Action nodes with API calls to create session data")}</small>
-                    </div>
-                  );
-                }
-              })()}
-              
-              {/* Common session variables */}
-              <div className="session-data-item">
-                <span className="session-variable">{"{{PIN}}"}</span>
-                <span className="session-description">User's PIN input</span>
-              </div>
-              <div className="session-data-item">
-                <span className="session-variable">{"{{selection}}"}</span>
-                <span className="session-description">User's menu selection</span>
-              </div>
-              <div className="session-data-item">
-                <span className="session-variable">{"{{selectedItem.id}}"}</span>
-                <span className="session-description">ID from selected menu item</span>
-              </div>
-              <div className="session-data-item">
-                <span className="session-variable">{"{{selectedItem.name}}"}</span>
-                <span className="session-description">Name from selected menu item</span>
-              </div>
-            </div>
-          </div>
-          
-          <div className="session-usage-guide">
-            <h5>💡 How to Use Session Data:</h5>
-            <ol>
-              <li><strong>Copy the variable name</strong> from the left (e.g., {"{{selectedItem.id}}"})</li>
-              <li><strong>Paste it in your cURL</strong> where you need dynamic data</li>
-              <li><strong>The system will replace</strong> {"{{variable}}"} with actual session values</li>
-            </ol>
-            
-            <div className="session-examples">
-              <h6>🚀 Example Usage:</h6>
-              <code>
-                "bookId": "{"{{selectedBook.id}}"}"<br/>
-                "userId": "{"{{PIN}}"}"<br/>
-                "amount": "{"{{userInput}}"}"
-              </code>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      {/* Flow Planning Section - NEW */}
-      <div className="flow-planning-section">
-        <h4>🎯 Dynamic USSD Flow Planning</h4>
-        <p>Plan your complete dynamic flow with session data management:</p>
-        
-        <div className="flow-steps">
-          <div className="flow-step">
-            <h5>📍 Your Current Step:</h5>
-            <div className="current-step-indicator">
-              <strong>Action Node</strong> - Creating API Template with Session Data Support
-            </div>
-          </div>
-          
-          <div className="flow-visualization">
-            <h5>🔄 Complete Flow Example:</h5>
-            <div className="flow-diagram">
-              <div className="flow-node start">Start Node</div>
-              <div className="flow-arrow">→</div>
-              <div className="flow-node input">Input Node<br/><small>(PIN/ID)</small></div>
-              <div className="flow-arrow">→</div>
-              <div className="flow-node action active">Action Node<br/><small>(Current - API Call)</small></div>
-              <div className="flow-arrow">→</div>
-              <div className="flow-node dynamic">Dynamic Menu<br/><small>(From API Response)</small></div>
-              <div className="flow-arrow">→</div>
-              <div className="flow-node action">Action Node<br/><small>(Using Selected Data)</small></div>
-            </div>
-          </div>
-          
-          <div className="session-data-flow">
-            <h5>💾 Session Data Strategy:</h5>
-            <div className="session-strategy">
-              <div className="strategy-item">
-                <span className="strategy-icon">🔑</span>
-                <div className="strategy-content">
-                  <strong>Store API Response:</strong> Save data from this API call for next nodes
-                  <br/><small>Example: Save user details, account info, product list</small>
-                </div>
-              </div>
-              <div className="strategy-item">
-                <span className="strategy-icon">📋</span>
-                <div className="strategy-content">
-                  <strong>Dynamic Menu Creation:</strong> Use stored data to populate menu options
-                  <br/><small>Example: Show available books, products, or accounts</small>
-                </div>
-              </div>
-              <div className="strategy-item">
-                <span className="strategy-icon">🎯</span>
-                <div className="strategy-content">
-                  <strong>Selection Usage:</strong> Use selected menu item in next API call
-                  <br/><small>Example: Get book details using selected book ID</small>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
       
       <div className="step-actions">
         <button onClick={parseCurlCommand} className="btn primary parse-btn">
