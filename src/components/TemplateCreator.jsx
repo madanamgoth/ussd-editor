@@ -955,9 +955,61 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
       }
     }
     
+    // For second templates: get template name directly from session variable source
+    if (!menuArrayName) {
+      console.log('🔍 Checking for session variables from previous templates...');
+      console.log('🔍 Current requestMapping:', requestMapping);
+      
+      const sessionFields = requestMapping.filter(field => 
+        field.mappingType === 'session' && field.storeAttribute && 
+        (field.storeAttribute.includes('selectedItem.') || field.storeAttribute.includes('_selectedItem.'))
+      );
+      
+      console.log('🔍 Found session fields:', sessionFields);
+      
+      if (sessionFields.length > 0) {
+        const firstSessionVar = sessionFields[0].storeAttribute;
+        console.log('🎯 Found session variable:', firstSessionVar);
+        
+        // Instead of extracting from pattern, get the template name directly
+        // Check which template this session variable belongs to
+        if (availableVariablesByTemplate && Object.keys(availableVariablesByTemplate).length > 0) {
+          // Find which template contains this session variable
+          for (const [templateName, variables] of Object.entries(availableVariablesByTemplate)) {
+            if (variables.includes(firstSessionVar)) {
+              menuArrayName = templateName;
+              console.log('✅ Found session variable belongs to template:', templateName);
+              console.log('🎯 Using template name directly:', menuArrayName);
+              break;
+            }
+          }
+        }
+        
+        // Fallback: extract from pattern if template lookup failed
+        if (!menuArrayName && firstSessionVar.includes('_selectedItem.')) {
+          const parts = firstSessionVar.split('_selectedItem.');
+          if (parts.length >= 2) {
+            menuArrayName = parts[0]; // e.g., "FICTION"
+            console.log('✅ Fallback: Extracted template name from pattern:', menuArrayName);
+          }
+        } else if (!menuArrayName && firstSessionVar.includes('selectedItem.')) {
+          // Generic selectedItem - look for any session variables with _items pattern
+          const itemsVariable = safeAvailableVariables.find(v => v.endsWith('_items'));
+          if (itemsVariable) {
+            menuArrayName = itemsVariable.replace('_items', '');
+            console.log('✅ Found generic session variable with items pattern:', menuArrayName);
+          }
+        }
+      } else {
+        console.log('⚠️ No session fields with selectedItem pattern found');
+      }
+    }
+    
     // Fallback: try to detect menu arrays from session variables with smart grouping
     if (!menuArrayName) {
       console.log('🔍 No configured array found, attempting pattern detection...');
+      console.log('⚠️ WARNING: Template name extraction failed, falling back to pattern detection');
+      console.log('🔍 This means menuArrayName is still null after session variable extraction');
       
       // Group related variables by their base name (e.g., items_menu_for_APICALL_ONE)
       const menuGroups = {};
@@ -1027,52 +1079,69 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
     })));
     
     if (hasSessionFields) {
-      console.log('✅ Found session fields, adding modify-overwrite-beta operation');
+      console.log('✅ Found session fields, generating traditional two-shift pattern');
+      console.log('🎯 Using previous template name in JOLT generation:', menuArrayName);
       
-      // Step 1: modify-overwrite-beta to extract selected item data
-      const modifySpec = {};
-      
-      // Calculate selectedIndex from user selection (1,2,3... → 0,1,2...)
-      modifySpec.selectedIndex = "=intSubtract(@(1,input.selection),1)";
-      
-      // Extract the selected item from the menu array
-      modifySpec.selectedItem = `=elementAt(@(1,${menuArrayName}),@(1,selectedIndex))`;
-      
-      console.log('🎯 Generated modify spec:', modifySpec);
-      
-      sessionAwareRequestJolt.push({
-        operation: "modify-overwrite-beta",
-        spec: modifySpec
-      });
+      // Use traditional two-shift pattern instead of modify-overwrite-beta
+      // This matches the expected format with previous template name
     } else {
       console.warn('⚠️ No session fields found that use selectedItem.* pattern');
       console.log('⚠️ Field mappings:', requestMapping.map(f => `${f.path}: ${f.mappingType} → ${f.storeAttribute}`));
     }
     
-    // Step 2: shift operation for final field mapping
+    // Step 1: First shift operation - map input and session data  
     const requestShiftSpec = {
       input: {}
     };
-    const requestDefaultSpec = {};
     
     requestMapping.forEach(field => {
       if (field.mappingType === 'dynamic' && field.storeAttribute) {
         // Regular dynamic fields from input
         setNestedValue(requestShiftSpec.input, field.storeAttribute, field.targetPath || field.path);
         console.log(`✅ Dynamic field: input.${field.storeAttribute} → ${field.targetPath || field.path}`);
-      } else if (field.mappingType === 'session' && field.storeAttribute && 
+      }
+    });
+    
+    // Add session array mapping using previous template name
+    if (hasSessionFields && menuArrayName) {
+      setNestedValue(requestShiftSpec.input, `${menuArrayName}.USERINDEX`, 'selectedItem');
+      console.log(`✅ Session array: input.${menuArrayName}.USERINDEX → selectedItem`);
+    }
+    
+    sessionAwareRequestJolt.push({
+      operation: "shift",
+      spec: requestShiftSpec
+    });
+    
+    // Step 2: Second shift operation - map selectedItem fields
+    const selectedItemShiftSpec = {};
+    
+    requestMapping.forEach(field => {
+      if (field.mappingType === 'session' && field.storeAttribute && 
                  field.storeAttribute.includes('selectedItem.')) {
-        // Session fields from selected items - map directly from selectedItem
+        // Session fields from selected items - map from selectedItem
         const parts = field.storeAttribute.split('selectedItem.');
         if (parts.length >= 2) {
           const fieldName = parts[1]; // e.g., 'title', 'year', 'author'
           const targetPath = field.targetPath || field.path; // e.g., 'profileDetails.authProfile'
           
-          // Map selectedItem.fieldName directly to target path
-          setNestedValue(requestShiftSpec, `selectedItem.${fieldName}`, targetPath);
+          // Map selectedItem.fieldName to target path
+          setNestedValue(selectedItemShiftSpec, `selectedItem.${fieldName}`, targetPath);
           console.log(`✅ Session field: selectedItem.${fieldName} → ${targetPath}`);
         }
-      } else if (field.mappingType === 'static' && field.category !== 'header') {
+      }
+    });
+    
+    sessionAwareRequestJolt.push({
+      operation: "shift", 
+      spec: selectedItemShiftSpec
+    });
+    
+    // Step 3: Default operation for static fields
+    const requestDefaultSpec = {};
+    
+    requestMapping.forEach(field => {
+      if (field.mappingType === 'static' && field.category !== 'header') {
         // Static fields
         setNestedValue(requestDefaultSpec, field.targetPath || field.path, field.staticValue || field.value);
         console.log(`✅ Static field: ${field.targetPath || field.path} = ${field.staticValue || field.value}`);
@@ -1085,18 +1154,11 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
     });
     
     sessionAwareRequestJolt.push({
-      operation: "shift",
-      spec: requestShiftSpec
-    });
-    
-    sessionAwareRequestJolt.push({
       operation: "default",
       spec: requestDefaultSpec
     });
-    
-    console.log('🎯 Generated session-aware request JOLT:', sessionAwareRequestJolt);
-    
-    // Use standard response and error mappings
+
+    console.log('🎯 Generated session-aware request JOLT:', sessionAwareRequestJolt);    // Use standard response and error mappings
     const responseJolt = responseMapping.generated || [
       {
         operation: "shift",
@@ -1244,8 +1306,28 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
       } else if (selectedArrayConfig.customSessionName) {
         menuArrayName = selectedArrayConfig.customSessionName;
       } else {
-        // Default fallback - extract from the displayed array preview
-        menuArrayName = 'items_menu_book_items';
+        // Fallback: try to extract from session variables in request mapping
+        const sessionFields = requestMapping.filter(field => 
+          field.mappingType === 'session' && field.storeAttribute && 
+          (field.storeAttribute.includes('selectedItem.') || field.storeAttribute.includes('_selectedItem.'))
+        );
+        
+        if (sessionFields.length > 0) {
+          const firstSessionVar = sessionFields[0].storeAttribute;
+          if (firstSessionVar.includes('_selectedItem.')) {
+            const parts = firstSessionVar.split('_selectedItem.');
+            if (parts.length >= 2) {
+              menuArrayName = parts[0]; // e.g., "SEARCH"
+              console.log('✅ Extracted array name from session variable for menu spec:', menuArrayName);
+            }
+          }
+        }
+        
+        if (!menuArrayName) {
+          // Ultimate fallback - this should rarely be used
+          menuArrayName = 'items_menu_book_items';
+          console.log('⚠️ Using hardcoded fallback array name:', menuArrayName);
+        }
       }
       
       console.log('🔍 Using menuArrayName for sessionSpec:', menuArrayName);
@@ -1258,8 +1340,14 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
         // Remove _items suffix if present and add _menu_raw
         const baseName = selectedArrayConfig.sessionVariable.replace(/_items$/, '');
         menuJoltKey = `${baseName}_menu_raw`;
+      } else if (menuArrayName && menuArrayName !== 'items_menu_book_items') {
+        // Use the extracted array name from session variables
+        const baseName = menuArrayName.replace(/_items$/, '');
+        menuJoltKey = `${baseName}_menu_raw`;
+        console.log('✅ Generated menu JOLT key from extracted array name:', menuJoltKey);
       } else {
         menuJoltKey = 'items_menu_book_menu_raw';
+        console.log('⚠️ Using hardcoded fallback menu JOLT key:', menuJoltKey);
       }
       
       // Generate menu JOLT transformation
@@ -1336,7 +1424,131 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
 
   // Download template as file
   const handleDownload = () => {
-    const result = downloadTemplate(templateData);
+    // First, check if we need to generate session-aware JOLT
+    const hasSessionFields = requestMapping.some(field => 
+      field.mappingType === 'session' && field.storeAttribute && 
+      (field.storeAttribute.includes('selectedItem.') || field.storeAttribute.includes('_selectedItem.'))
+    );
+    
+    let finalTemplateData = { ...templateData };
+    
+    if (hasSessionFields) {
+      console.log('🔍 Download: Detected session fields, ensuring proper JOLT generation...');
+      
+      // Make sure the template data has the correct session-aware JOLT
+      // This should match the logic from generateSessionAwareJoltSpecs
+      const sessionAwareRequestJolt = [];
+      
+      // Extract menu array name from session variables
+      let menuArrayName = null;
+      const sessionFieldsArray = requestMapping.filter(field => 
+        field.mappingType === 'session' && field.storeAttribute && 
+        (field.storeAttribute.includes('selectedItem.') || field.storeAttribute.includes('_selectedItem.'))
+      );
+      
+      if (sessionFieldsArray.length > 0) {
+        const firstSessionVar = sessionFieldsArray[0].storeAttribute;
+        console.log('🎯 Download: Found session variable:', firstSessionVar);
+        
+        // Get template name directly from availableVariablesByTemplate
+        if (availableVariablesByTemplate && Object.keys(availableVariablesByTemplate).length > 0) {
+          for (const [templateName, variables] of Object.entries(availableVariablesByTemplate)) {
+            if (variables.includes(firstSessionVar)) {
+              menuArrayName = templateName;
+              console.log('✅ Download: Found session variable belongs to template:', templateName);
+              break;
+            }
+          }
+        }
+        
+        // Fallback: extract from pattern if template lookup failed
+        if (!menuArrayName && firstSessionVar.includes('_selectedItem.')) {
+          const parts = firstSessionVar.split('_selectedItem.');
+          if (parts.length >= 2) {
+            menuArrayName = parts[0];
+            console.log('✅ Download: Fallback extracted array name:', menuArrayName);
+          }
+        }
+      }
+      
+      if (menuArrayName) {
+        console.log('✅ Download: Using previous template name:', menuArrayName);
+        
+        // Generate the traditional two-shift JOLT pattern (not modify-overwrite-beta)
+        // Step 1: First shift to map input and session data
+        const requestShiftSpec = { input: {} };
+        
+        // Map dynamic fields
+        requestMapping.forEach(field => {
+          if (field.mappingType === 'dynamic' && field.storeAttribute) {
+            setNestedValue(requestShiftSpec.input, field.storeAttribute, field.targetPath || field.path);
+            console.log(`✅ Download: Mapped dynamic field: ${field.storeAttribute} → ${field.targetPath || field.path}`);
+          }
+        });
+        
+        // Map the session array using the previous template name
+        setNestedValue(requestShiftSpec.input, `${menuArrayName}.USERINDEX`, 'selectedItem');
+        console.log(`✅ Download: Mapped session array: ${menuArrayName}.USERINDEX → selectedItem`);
+        
+        sessionAwareRequestJolt.push({
+          operation: "shift",
+          spec: requestShiftSpec
+        });
+        
+        // Step 2: Second shift to map selectedItem fields
+        const selectedItemShiftSpec = {};
+        
+        requestMapping.forEach(field => {
+          if (field.mappingType === 'session' && field.storeAttribute && 
+              field.storeAttribute.includes('selectedItem.')) {
+            const parts = field.storeAttribute.split('selectedItem.');
+            if (parts.length >= 2) {
+              const fieldName = parts[1]; // e.g., 'title', 'author'
+              const targetPath = field.targetPath || field.path;
+              setNestedValue(selectedItemShiftSpec, `selectedItem.${fieldName}`, targetPath);
+              console.log(`✅ Download: Mapped selectedItem field: selectedItem.${fieldName} → ${targetPath}`);
+            }
+          }
+        });
+        
+        // Add other non-dynamic, non-session fields to the shift
+        requestMapping.forEach(field => {
+          if (field.mappingType !== 'dynamic' && field.mappingType !== 'session' && 
+              field.mappingType !== 'static') {
+            // Handle other mapping types if needed
+          }
+        });
+        
+        sessionAwareRequestJolt.push({
+          operation: "shift",
+          spec: selectedItemShiftSpec
+        });
+        
+        // Step 3: Default values for static fields
+        const requestDefaultSpec = {};
+        requestMapping.forEach(field => {
+          if (field.mappingType === 'static' && field.category !== 'header') {
+            setNestedValue(requestDefaultSpec, field.targetPath || field.path, field.staticValue || field.value);
+            console.log(`✅ Download: Mapped static field: ${field.targetPath || field.path} = ${field.staticValue || field.value}`);
+          }
+        });
+        
+        sessionAwareRequestJolt.push({
+          operation: "default",
+          spec: requestDefaultSpec
+        });
+        
+        // Update the template data with corrected JOLT
+        finalTemplateData = {
+          ...finalTemplateData,
+          requestTemplate: { joltSpec: sessionAwareRequestJolt }
+        };
+        
+        console.log('✅ Download: Generated session-aware JOLT:', sessionAwareRequestJolt);
+      }
+    }
+    
+    const result = downloadTemplate(finalTemplateData);
     if (result.success) {
       console.log('✅ Template downloaded:', result.fileName);
     } else {
