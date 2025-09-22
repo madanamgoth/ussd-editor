@@ -2,19 +2,39 @@ import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 
 const ActionNode = ({ data, isConnectable, selected }) => {
-  // Get templates and transaction codes from config
+  // Get templates and response codes from config
   const templates = data.config?.templates || [];
-  const transactionCodes = data.config?.transactionCodes || ['200', '400', '500'];
+  const responseCodes = data.config?.responseCodes || [];
+  // Legacy support for old transactionCodes
+  const legacyTransactionCodes = data.config?.transactionCodes || [];
+  
+  // Combine new and legacy response codes
+  const allResponseCodes = responseCodes.length > 0 ? responseCodes : 
+    legacyTransactionCodes.map(code => ({ 
+      code, 
+      isResponseParsingEnabled: false, 
+      conditions: [] 
+    }));
   
   // Validation status
   const hasTemplates = templates.length > 0;
-  const hasValidTransactionCodes = transactionCodes.length > 0;
-  const nodeStatus = hasTemplates && hasValidTransactionCodes ? 'valid' : 'warning';
+  const hasValidResponseCodes = allResponseCodes.length > 0;
+  const nodeStatus = hasTemplates && hasValidResponseCodes ? 'valid' : 'warning';
+  
+  // Calculate total connection points (for conditional parsing)
+  const getTotalConnectionPoints = () => {
+    return allResponseCodes.reduce((total, responseCode) => {
+      if (responseCode.isResponseParsingEnabled && responseCode.conditions?.length > 0) {
+        return total + responseCode.conditions.length + 1; // +1 for NoMatch
+      }
+      return total + 1; // Direct connection
+    }, 0);
+  };
   
   return (
     <div 
       className={`node action-node ${selected ? 'selected' : ''} ${nodeStatus}`}
-      title={`ACTION: ${data.label || 'Action'}\nTemplates: ${templates.map(t => t.name || t._id || t.id).join(', ') || 'None'}\nTransaction Codes: ${transactionCodes.join(', ')}\nStatus: ${nodeStatus}`}
+      title={`ACTION: ${data.label || 'Action'}\nTemplates: ${templates.map(t => t.name || t._id || t.id).join(', ') || 'None'}\nResponse Codes: ${allResponseCodes.map(rc => rc.code).join(', ')}\nConnection Points: ${getTotalConnectionPoints()}\nStatus: ${nodeStatus}`}
     >
       <Handle
         type="target"
@@ -58,38 +78,110 @@ const ActionNode = ({ data, isConnectable, selected }) => {
           )}
         </div>
 
-        {/* Transaction Codes Section - These create the actual output handles */}
+        {/* Enhanced Response Codes Section with Conditional Connections */}
         <div className="transactions-section">
           <div className="section-title">Response Codes:</div>
           <div className="transactions-list">
-            {transactionCodes.map((code, index) => {
-              const codeType = code.startsWith('2') ? 'success' : 
-                             code.startsWith('4') ? 'error' : 'server-error';
+            {allResponseCodes.map((responseCode, index) => {
+              const code = responseCode.code;
+              const codeType = code?.startsWith('2') ? 'success' : 
+                             code?.startsWith('4') ? 'error' : 'server-error';
               
-              return (
-                <div key={code} className={`transaction-item ${codeType}`}>
-                  <span className="transaction-text truncate-text" title={`Transaction Code: ${code}`}>
-                    {code}
-                  </span>
-                  <Handle
-                    type="source"
-                    position={Position.Right}
-                    id={`transaction-${code}`}
-                    isConnectable={isConnectable}
-                    style={{
-                      position: 'relative',
-                      right: 'auto',
-                      top: 'auto',
-                      transform: 'none',
-                      background: codeType === 'success' ? '#10b981' : 
-                                 codeType === 'error' ? '#f59e0b' : '#ef4444',
-                      width: '8px',
-                      height: '8px',
-                      border: '1px solid #fff'
-                    }}
-                  />
-                </div>
-              );
+              // Check if this response code has conditional parsing enabled
+              const hasConditionalParsing = responseCode.isResponseParsingEnabled && 
+                                          responseCode.conditions?.length > 0;
+              
+              if (hasConditionalParsing) {
+                // Render multiple connection points for each condition + NoMatch
+                return (
+                  <div key={code} className="response-code-group">
+                    <div className={`response-code-header ${codeType}`}>
+                      <span className="response-code-text">
+                        {code} 🔍
+                      </span>
+                      <span className="conditional-indicator">
+                        ({responseCode.conditions.length + 1} paths)
+                      </span>
+                    </div>
+                    
+                    {/* Render connection handles for each condition */}
+                    {responseCode.conditions.map((condition, condIndex) => (
+                      <div key={`${code}-${condition.name}`} className="condition-item">
+                        <span className="condition-text truncate-text" title={`Condition: ${condition.name}`}>
+                          📌 {condition.name}
+                        </span>
+                        <Handle
+                          type="source"
+                          position={Position.Right}
+                          id={`response-${code}-${condition.name}`}
+                          isConnectable={isConnectable}
+                          style={{
+                            position: 'relative',
+                            right: 'auto',
+                            top: 'auto',
+                            transform: 'none',
+                            background: codeType === 'success' ? '#10b981' : 
+                                       codeType === 'error' ? '#f59e0b' : '#ef4444',
+                            width: '8px',
+                            height: '8px',
+                            border: '1px solid #fff'
+                          }}
+                        />
+                      </div>
+                    ))}
+                    
+                    {/* NoMatch/Default connection */}
+                    <div className="condition-item">
+                      <span className="condition-text truncate-text" title="Default path when no conditions match">
+                        🔄 NoMatch
+                      </span>
+                      <Handle
+                        type="source"
+                        position={Position.Right}
+                        id={`response-${code}-NoMatch`}
+                        isConnectable={isConnectable}
+                        style={{
+                          position: 'relative',
+                          right: 'auto',
+                          top: 'auto',
+                          transform: 'none',
+                          background: '#6b7280',
+                          width: '8px',
+                          height: '8px',
+                          border: '1px solid #fff'
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              } else {
+                // Render single connection point for direct routing
+                return (
+                  <div key={code} className={`transaction-item ${codeType}`}>
+                    <span className="transaction-text truncate-text" title={`Response Code: ${code}`}>
+                      {code}
+                      {code?.startsWith('5') && <span style={{ fontSize: '0.8em', marginLeft: '4px' }}>🔗</span>}
+                    </span>
+                    <Handle
+                      type="source"
+                      position={Position.Right}
+                      id={`response-${code}`}
+                      isConnectable={isConnectable}
+                      style={{
+                        position: 'relative',
+                        right: 'auto',
+                        top: 'auto',
+                        transform: 'none',
+                        background: codeType === 'success' ? '#10b981' : 
+                                   codeType === 'error' ? '#f59e0b' : '#ef4444',
+                        width: '8px',
+                        height: '8px',
+                        border: '1px solid #fff'
+                      }}
+                    />
+                  </div>
+                );
+              }
             })}
           </div>
         </div>
