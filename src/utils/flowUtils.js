@@ -245,6 +245,46 @@ export const createEdge = (source, target, sourceHandle = null, animated = true,
   return edgeConfig;
 };
 
+// Helper function to extract variables from END node prompts
+const extractVariablesFromPrompt = (prompt) => {
+  if (!prompt || typeof prompt !== 'string') {
+    return ['NODATA'];
+  }
+  
+  // Find all variables in the format :variableName
+  const variableRegex = /:([a-zA-Z_][a-zA-Z0-9_]*)/g;
+  const variables = [];
+  let match;
+  
+  while ((match = variableRegex.exec(prompt)) !== null) {
+    variables.push(match[1]); // Extract variable name without the colon
+  }
+  
+  // If no variables found, return NODATA
+  return variables.length > 0 ? variables : ['NODATA'];
+};
+
+// Helper function to get promptsList from END nodes
+const getPromptsListFromEndNode = (endNodeId, nodeMap) => {
+  const endNode = nodeMap.get(endNodeId);
+  if (!endNode || endNode.data.type !== 'END') {
+    return ['NODATA'];
+  }
+  
+  // Get prompts from the END node - use default language first, fallback to any available
+  const prompts = endNode.data.config?.prompts || {};
+  const defaultLang = endNode.data.config?.defaultLanguage || 'en';
+  
+  // Try default language first, then fallback to first available prompt
+  let promptText = prompts[defaultLang];
+  if (!promptText) {
+    const availablePrompts = Object.values(prompts).filter(p => p && p.trim() !== '');
+    promptText = availablePrompts.length > 0 ? availablePrompts[0] : '';
+  }
+  
+  return extractVariablesFromPrompt(promptText);
+};
+
 // Helper function to generate query record for conditional parsing
 const generateQueryRecord = (conditions, responseCode) => {
   if (!conditions || conditions.length === 0) {
@@ -334,12 +374,19 @@ export const exportToFlowFormat = (nodes, edges) => {
     const targetNode = nodeMap.get(targetNodeId);
     if (!targetNode) return null;
     
-    return {
+    const metadata = {
       nextNodeType: targetNode.data.type,
       nextNodePrompts: targetNode.data.config?.prompts || {},
       nextNodeStoreAttribute: targetNode.data.config?.storeAttribute || targetNode.data.config?.variableName || null,
       nextNodeTemplateId: targetNode.data.config?.templateId || null
     };
+    
+    // Add promptsList if the target node is an END node
+    if (targetNode.data.type === 'END') {
+      metadata.promptsList = getPromptsListFromEndNode(targetNodeId, nodeMap);
+    }
+    
+    return metadata;
   };
   
   return sortedNodes.map(node => {
@@ -580,6 +627,10 @@ export const exportToFlowFormat = (nodes, edges) => {
         if (metadata.nextNodeTemplateId) {
           cleanNode.nextNodeTemplateId = metadata.nextNodeTemplateId;
         }
+        // Add promptsList if connecting to END node
+        if (metadata.promptsList) {
+          cleanNode.promptsList = metadata.promptsList;
+        }
       }
     } else if ((nodeType === 'MENU' || nodeType === 'ACTION' || nodeType === 'DYNAMIC-MENU') && transitionKeys.length > 0) {
       // Use nextNodesMetadata format for MENU, ACTION, DYNAMIC-MENU nodes (ALWAYS, even with single transitions)
@@ -613,12 +664,19 @@ export const exportToFlowFormat = (nodes, edges) => {
                 const targetNode = nodeMap.get(targetNodeId);
                 
                 if (targetNode) {
-                  conditionalMetadata[conditionName] = {
+                  const conditionMetadata = {
                     nextNodeType: targetNode.data.type,
                     nextNodePrompts: targetNode.data.config?.prompts || {},
                     nextNodeStoreAttribute: targetNode.data.config?.storeAttribute || targetNode.data.config?.variableName || null,
                     nextNodeTemplateId: targetNode.data.config?.templateId || null
                   };
+                  
+                  // Add promptsList if connecting to END node
+                  if (targetNode.data.type === 'END') {
+                    conditionMetadata.promptsList = getPromptsListFromEndNode(targetNodeId, nodeMap);
+                  }
+                  
+                  conditionalMetadata[conditionName] = conditionMetadata;
                 } else if (metadata.conditions && metadata.conditions[conditionName]) {
                   // Fallback to metadata from conditions
                   conditionalMetadata[conditionName] = metadata.conditions[conditionName];

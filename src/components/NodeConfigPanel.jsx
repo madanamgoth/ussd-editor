@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import TemplateCreator from './TemplateCreator';
+import './EndNodeConfigStyles.css';
 
 const NodeConfigPanel = ({ selectedNode, onUpdateNode, onClose, allNodes = [] }) => {
   
@@ -1056,6 +1057,50 @@ FROM FLOWFILE`;
                 onChange={(e) => setConfig(prev => ({ ...prev, fallback: e.target.value }))}
                 placeholder="Enter fallback node ID"
               />
+            </div>
+          </>
+        )}
+
+        {selectedNode.data.type === 'END' && (
+          <>
+            <div className="config-section">
+              <label>End Message Configuration:</label>
+              <div className="info-box">
+                <p>💡 <strong>Variables in Messages:</strong></p>
+                <p>Use <code>:variableName</code> format to include variables in your end message.</p>
+                <p><strong>Example:</strong> "Thank you :userName! Your transaction :transactionId is complete."</p>
+                <p>Variables will be extracted automatically and added to connected nodes as <code>promptsList</code></p>
+              </div>
+            </div>
+            
+            <div className="config-section">
+              <label>Variable Preview:</label>
+              <div className="variable-preview">
+                {(() => {
+                  const currentPrompt = config.prompts[config.defaultLanguage] || '';
+                  const extractedVars = currentPrompt.match(/:([a-zA-Z_][a-zA-Z0-9_]*)/g);
+                  if (extractedVars && extractedVars.length > 0) {
+                    return (
+                      <div className="extracted-variables">
+                        <strong>Found variables: </strong>
+                        {extractedVars.map(v => v.substring(1)).join(', ')}
+                        <div className="prompts-list-preview">
+                          <code>"promptsList": {JSON.stringify(extractedVars.map(v => v.substring(1)))}</code>
+                        </div>
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div className="no-variables">
+                        <span>No variables found. </span>
+                        <div className="prompts-list-preview">
+                          <code>"promptsList": ["NODATA"]</code>
+                        </div>
+                      </div>
+                    );
+                  }
+                })()}
+              </div>
             </div>
           </>
         )}
