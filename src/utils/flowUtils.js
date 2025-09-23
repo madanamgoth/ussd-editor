@@ -403,15 +403,15 @@ export const exportToFlowFormat = (nodes, edges) => {
                     // Initialize conditional metadata structure
                     if (!nextNodeMetadata[responseCode]) {
                       nextNodeMetadata[responseCode] = {
-                        isResponseParsing: true,
+                        isResponseParsing: "Y",
                         conditions: {},
                         targets: {}
                       };
-                    } else if (typeof nextNodeMetadata[responseCode] === 'object' && !nextNodeMetadata[responseCode].isResponseParsing) {
+                    } else if (typeof nextNodeMetadata[responseCode] === 'object' && !(nextNodeMetadata[responseCode].isResponseParsing === "Y" || nextNodeMetadata[responseCode].isResponseParsing === true)) {
                       // Convert existing metadata to conditional format
                       const existingMetadata = nextNodeMetadata[responseCode];
                       nextNodeMetadata[responseCode] = {
-                        isResponseParsing: true,
+                        isResponseParsing: "Y",
                         conditions: {},
                         targets: {},
                         directTarget: existingMetadata
@@ -600,10 +600,10 @@ export const exportToFlowFormat = (nodes, edges) => {
             // Check if transitions is an object (indicating conditional structure)
             const isConditionalTransition = typeof transition === 'object' && transition !== null;
             
-            if (hasConditionalParsing && isConditionalTransition && metadata.isResponseParsing) {
+            if (hasConditionalParsing && isConditionalTransition && (metadata.isResponseParsing === true || metadata.isResponseParsing === "Y")) {
               // This is a conditional response code - build enhanced metadata
               const conditionalMetadata = {
-                isResponseParsing: true,
+                isResponseParsing: "Y",
                 queryRecord: generateQueryRecord(responseCodeConfig.conditions, key)
               };
               
@@ -630,8 +630,24 @@ export const exportToFlowFormat = (nodes, edges) => {
               
               cleanNode.nextNodesMetadata[key] = conditionalMetadata;
             } else {
-              // Direct connection (no conditional parsing or 500 codes)
-              cleanNode.nextNodesMetadata[key] = metadata;
+              // Direct connection (no conditional parsing) - ALWAYS add isResponseParsing: "N"
+              const directMetadata = { 
+                isResponseParsing: "N",
+                ...metadata
+              };
+              
+              // Clean up any internal fields that shouldn't be exported
+              if (directMetadata.isResponseParsingEnabled) {
+                delete directMetadata.isResponseParsingEnabled;
+              }
+              if (directMetadata.conditions) {
+                delete directMetadata.conditions;
+              }
+              if (directMetadata.queryRecord) {
+                delete directMetadata.queryRecord;
+              }
+              
+              cleanNode.nextNodesMetadata[key] = directMetadata;
             }
           }
         });
@@ -671,17 +687,66 @@ export const exportToFlowFormat = (nodes, edges) => {
       if (config.templateId) {
         cleanNode.templateId = config.templateId;
       }
-      if (config.sessionSpec) {
-        cleanNode.sessionSpec = config.sessionSpec;
+      
+      // Always add isNextMenuDynamic field for ACTION nodes
+      const isDynamic = config.isNextMenuDynamic === true || config.isNextMenuDynamic === "Y";
+      cleanNode.isNextMenuDynamic = isDynamic ? "Y" : "N";
+      
+      // Add sessionSpec based on dynamic menu status
+      if (isDynamic) {
+        // Dynamic menu sessionSpec (always generate clean version)
+        cleanNode.sessionSpec = JSON.stringify([
+          {
+            "operation": "shift",
+            "spec": {
+              "*": {
+                "*": "&"
+              }
+            }
+          },
+          {
+            "operation": "shift", 
+            "spec": {
+              "*": "&",
+              "fiction_menu": {
+                "*": {
+                  "@": "TransferMoney.&"
+                }
+              }
+            }
+          },
+          {
+            "operation": "modify-overwrite-beta",
+            "spec": {
+              "TransferMoney": "=recursivelySortKeys"
+            }
+          },
+          {
+            "operation": "remove",
+            "spec": {
+              "fiction_menu": ""
+            }
+          }
+        ]);
+      } else {
+        // Non-dynamic menu sessionSpec
+        cleanNode.sessionSpec = JSON.stringify([
+          {
+            "operation": "shift",
+            "spec": {
+              "*": {
+                "*": "&"
+              }
+            }
+          }
+        ]);
       }
+      
       if (config.menuName) {
         cleanNode.menuName = config.menuName;
       }
       if (config.menuJolt) {
         cleanNode.menuJolt = config.menuJolt;
-      }
-      if (config.isNextMenuDynamic) {
-        cleanNode.isNextMenuDynamic = config.isNextMenuDynamic;
       }
     }
     
