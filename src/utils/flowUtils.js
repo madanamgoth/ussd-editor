@@ -245,6 +245,67 @@ export const createEdge = (source, target, sourceHandle = null, animated = true,
   return edgeConfig;
 };
 
+// Helper function to generate query record for conditional parsing
+const generateQueryRecord = (conditions, responseCode) => {
+  if (!conditions || conditions.length === 0) {
+    return null;
+  }
+  
+  // Extract SELECT fields and WHERE conditions from user input
+  let selectFields = "*";
+  const processedConditions = [];
+  
+  conditions.forEach((condition, index) => {
+    const conditionName = `condition${index + 1}`;
+    let whereClause = (condition.query || condition.sqlCondition || 'undefined').trim();
+    
+    // Check if user provided a full SELECT statement
+    if (whereClause.toUpperCase().startsWith('SELECT')) {
+      // Extract SELECT fields from the first condition
+      const selectMatch = whereClause.match(/SELECT\s+(.*?)\s+FROM\s+FLOWFILE/i);
+      if (selectMatch && selectFields === "*") {
+        selectFields = selectMatch[1].trim();
+      }
+      
+      // Extract WHERE clause after WHEN
+      const whenMatch = whereClause.match(/WHEN\s+(.*?)$/i);
+      if (whenMatch) {
+        whereClause = whenMatch[1].trim();
+      } else {
+        // If no WHEN found, try to extract condition after FROM FLOWFILE
+        const fromMatch = whereClause.match(/FROM\s+FLOWFILE\s+WHERE\s+(.*?)$/i);
+        if (fromMatch) {
+          whereClause = fromMatch[1].trim();
+        } else {
+          // Extract everything after WHEN if present
+          const directWhenMatch = whereClause.match(/WHEN\s+(.*?)$/i);
+          if (directWhenMatch) {
+            whereClause = directWhenMatch[1].trim();
+          }
+        }
+      }
+    }
+    
+    processedConditions.push({
+      conditionName,
+      whereClause
+    });
+  });
+  
+  let query = `SELECT ${selectFields},\n  TRIM(\n    CASE\n`;
+  
+  processedConditions.forEach(condition => {
+    query += `      WHEN ${condition.whereClause} THEN '${condition.conditionName}'\n`;
+  });
+  
+  query += "      ELSE 'NoMatch'\n";
+  query += "    END\n";
+  query += "  ) AS matchedPath\n";
+  query += "FROM FLOWFILE";
+  
+  return query;
+};
+
 export const exportToFlowFormat = (nodes, edges) => {
   // Sort nodes to put START nodes first, then others in logical order
   const sortedNodes = [...nodes].sort((a, b) => {
@@ -304,15 +365,77 @@ export const exportToFlowFormat = (nodes, edges) => {
               nextNodeMetadata['*'] = metadata;
             }
           } else if (nodeType === 'ACTION') {
-            // For ACTION nodes, clean up transaction codes
+            // For ACTION nodes, handle new response format: response-200, response-200-condition1, response-200-NoMatch
             let cleanKey = sourceHandle;
-            if (sourceHandle.startsWith('transaction-')) {
+            
+            if (sourceHandle.startsWith('response-')) {
+              // New response format: response-200, response-200-condition1, response-200-NoMatch
+              const parts = sourceHandle.split('-');
+              if (parts.length >= 2) {
+                const responseCode = parts[1]; // 200, 400, 500
+                
+                if (['200', '400', '500'].includes(responseCode)) {
+                  if (parts.length === 2) {
+                    // Direct connection: response-200 (for 500 codes or non-conditional)
+                    cleanTransitions[responseCode] = edge.target;
+                    if (metadata) {
+                      nextNodeMetadata[responseCode] = metadata;
+                    }
+                  } else if (parts.length === 3) {
+                    // Conditional connection: response-200-condition1 or response-200-NoMatch
+                    const conditionOrNoMatch = parts[2];
+                    
+                    // Initialize nested transitions structure for conditional response codes
+                    if (!cleanTransitions[responseCode]) {
+                      cleanTransitions[responseCode] = {};
+                    }
+                    
+                    // Ensure it's an object (not a string from direct connection)
+                    if (typeof cleanTransitions[responseCode] === 'string') {
+                      const directTarget = cleanTransitions[responseCode];
+                      cleanTransitions[responseCode] = {};
+                      // If there was a direct connection, we'll handle it below
+                    }
+                    
+                    // Set the specific condition target
+                    cleanTransitions[responseCode][conditionOrNoMatch] = edge.target;
+                    
+                    // Initialize conditional metadata structure
+                    if (!nextNodeMetadata[responseCode]) {
+                      nextNodeMetadata[responseCode] = {
+                        isResponseParsing: true,
+                        conditions: {},
+                        targets: {}
+                      };
+                    } else if (typeof nextNodeMetadata[responseCode] === 'object' && !nextNodeMetadata[responseCode].isResponseParsing) {
+                      // Convert existing metadata to conditional format
+                      const existingMetadata = nextNodeMetadata[responseCode];
+                      nextNodeMetadata[responseCode] = {
+                        isResponseParsing: true,
+                        conditions: {},
+                        targets: {},
+                        directTarget: existingMetadata
+                      };
+                    }
+                    
+                    // Store the target and metadata for this specific condition
+                    nextNodeMetadata[responseCode].targets[conditionOrNoMatch] = edge.target;
+                    if (conditionOrNoMatch === 'NoMatch') {
+                      nextNodeMetadata[responseCode].NoMatch = metadata;
+                    } else {
+                      nextNodeMetadata[responseCode].conditions[conditionOrNoMatch] = metadata;
+                    }
+                  }
+                }
+              }
+            } else if (sourceHandle.startsWith('transaction-')) {
+              // Legacy transaction format
               cleanKey = sourceHandle.replace('transaction-', '');
-            }
-            if (['200', '400', '500', 'onSuccess', 'onError', 'onBadRequest'].includes(cleanKey)) {
-              cleanTransitions[cleanKey] = edge.target;
-              if (metadata) {
-                nextNodeMetadata[cleanKey] = metadata;
+              if (['200', '400', '500', 'onSuccess', 'onError', 'onBadRequest'].includes(cleanKey)) {
+                cleanTransitions[cleanKey] = edge.target;
+                if (metadata) {
+                  nextNodeMetadata[cleanKey] = metadata;
+                }
               }
             }
           } else if (nodeType === 'MENU') {
@@ -461,11 +584,65 @@ export const exportToFlowFormat = (nodes, edges) => {
     } else if ((nodeType === 'MENU' || nodeType === 'ACTION' || nodeType === 'DYNAMIC-MENU') && transitionKeys.length > 0) {
       // Use nextNodesMetadata format for MENU, ACTION, DYNAMIC-MENU nodes (ALWAYS, even with single transitions)
       cleanNode.nextNodesMetadata = {};
-      transitionKeys.forEach(key => {
-        if (nextNodeMetadata[key]) {
-          cleanNode.nextNodesMetadata[key] = nextNodeMetadata[key];
-        }
-      });
+      
+      if (nodeType === 'ACTION') {
+        // Special handling for ACTION nodes with conditional parsing
+        transitionKeys.forEach(key => {
+          const transition = cleanTransitions[key];
+          const metadata = nextNodeMetadata[key];
+          
+          if (metadata) {
+            // Check if this response code has conditional parsing enabled
+            const responseCodeConfig = config.responseCodes?.find(rc => rc.code === key);
+            const hasConditionalParsing = responseCodeConfig?.isResponseParsingEnabled && 
+                                        responseCodeConfig?.conditions?.length > 0;
+            
+            // Check if transitions is an object (indicating conditional structure)
+            const isConditionalTransition = typeof transition === 'object' && transition !== null;
+            
+            if (hasConditionalParsing && isConditionalTransition && metadata.isResponseParsing) {
+              // This is a conditional response code - build enhanced metadata
+              const conditionalMetadata = {
+                isResponseParsing: true,
+                queryRecord: generateQueryRecord(responseCodeConfig.conditions, key)
+              };
+              
+              // Add condition metadata for each condition in the transitions
+              Object.keys(transition).forEach(conditionName => {
+                const targetNodeId = transition[conditionName];
+                const targetNode = nodeMap.get(targetNodeId);
+                
+                if (targetNode) {
+                  conditionalMetadata[conditionName] = {
+                    nextNodeType: targetNode.data.type,
+                    nextNodePrompts: targetNode.data.config?.prompts || {},
+                    nextNodeStoreAttribute: targetNode.data.config?.storeAttribute || targetNode.data.config?.variableName || null,
+                    nextNodeTemplateId: targetNode.data.config?.templateId || null
+                  };
+                } else if (metadata.conditions && metadata.conditions[conditionName]) {
+                  // Fallback to metadata from conditions
+                  conditionalMetadata[conditionName] = metadata.conditions[conditionName];
+                } else if (conditionName === 'NoMatch' && metadata.NoMatch) {
+                  // Handle NoMatch specifically
+                  conditionalMetadata[conditionName] = metadata.NoMatch;
+                }
+              });
+              
+              cleanNode.nextNodesMetadata[key] = conditionalMetadata;
+            } else {
+              // Direct connection (no conditional parsing or 500 codes)
+              cleanNode.nextNodesMetadata[key] = metadata;
+            }
+          }
+        });
+      } else {
+        // For MENU and DYNAMIC-MENU nodes, use standard processing
+        transitionKeys.forEach(key => {
+          if (nextNodeMetadata[key]) {
+            cleanNode.nextNodesMetadata[key] = nextNodeMetadata[key];
+          }
+        });
+      }
     }
 
     // Add optional fields only if they have meaningful values

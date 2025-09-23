@@ -16,6 +16,37 @@ const ActionNode = ({ data, isConnectable, selected }) => {
       conditions: [] 
     }));
   
+  // Helper function to generate tooltip content for connections
+  const getConnectionTooltip = (responseCode, conditionIndex = null, isNoMatch = false) => {
+    const code = responseCode.code;
+    
+    if (!responseCode.isResponseParsingEnabled || !responseCode.conditions?.length) {
+      // Direct connection
+      return `🔗 Direct Connection for HTTP ${code}\n\n` +
+             `📋 Meaning: When API returns HTTP ${code}, flow continues directly to connected node.\n\n` +
+             `🎯 Usage: Simple routing without conditional logic.\n\n` +
+             `💡 Admin Guide: Connect this to the next node in your USSD flow.`;
+    }
+    
+    if (isNoMatch) {
+      // NoMatch condition
+      return `🔄 NoMatch Path for HTTP ${code}\n\n` +
+             `📋 Meaning: When API returns HTTP ${code} but none of the defined conditions match.\n\n` +
+             `🎯 Usage: Fallback path for unexpected response content.\n\n` +
+             `💡 Admin Guide: Connect this to an error handling or default menu node.`;
+    }
+    
+    // Specific condition
+    const condition = responseCode.conditions[conditionIndex];
+    const conditionName = `condition${conditionIndex + 1}`;
+    
+    return `📌 ${conditionName} Path for HTTP ${code}\n\n` +
+           `📋 SQL Condition: WHEN httpCode = ${code} AND ${condition.query}\n\n` +
+           `🎯 Meaning: When API returns HTTP ${code} AND the condition "${condition.query}" is true.\n\n` +
+           `💡 Admin Guide: This path triggers when the API response matches your specific condition.\n\n` +
+           `🔗 Connect to: The next node that should handle this specific scenario.`;
+  };
+  
   // Validation status
   const hasTemplates = templates.length > 0;
   const hasValidResponseCodes = allResponseCodes.length > 0;
@@ -105,52 +136,73 @@ const ActionNode = ({ data, isConnectable, selected }) => {
                     </div>
                     
                     {/* Render connection handles for each condition */}
-                    {responseCode.conditions.map((condition, condIndex) => (
-                      <div key={`${code}-${condition.name}`} className="condition-item">
-                        <span className="condition-text truncate-text" title={`Condition: ${condition.name}`}>
-                          📌 {condition.name}
-                        </span>
+                    {responseCode.conditions.map((condition, condIndex) => {
+                      const conditionName = `condition${condIndex + 1}`;
+                      const tooltip = getConnectionTooltip(responseCode, condIndex);
+                      
+                      return (
+                        <div key={`${code}-${conditionName}`} className="condition-item">
+                          <span 
+                            className="condition-text truncate-text" 
+                            title={tooltip}
+                          >
+                            📌 {conditionName}
+                          </span>
+                          <div 
+                            className="connection-handle-wrapper"
+                            title={tooltip}
+                          >
+                            <Handle
+                              type="source"
+                              position={Position.Right}
+                              id={`response-${code}-${conditionName}`}
+                              isConnectable={isConnectable}
+                              style={{
+                                position: 'relative',
+                                right: 'auto',
+                                top: 'auto',
+                                transform: 'none',
+                                background: codeType === 'success' ? '#10b981' : 
+                                           codeType === 'error' ? '#f59e0b' : '#ef4444',
+                                width: '8px',
+                                height: '8px',
+                                border: '1px solid #fff'
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                    
+                    {/* NoMatch/Default connection */}
+                    <div className="condition-item">
+                      <span 
+                        className="condition-text truncate-text" 
+                        title={getConnectionTooltip(responseCode, null, true)}
+                      >
+                        🔄 NoMatch
+                      </span>
+                      <div 
+                        className="connection-handle-wrapper"
+                        title={getConnectionTooltip(responseCode, null, true)}
+                      >
                         <Handle
                           type="source"
                           position={Position.Right}
-                          id={`response-${code}-${condition.name}`}
+                          id={`response-${code}-NoMatch`}
                           isConnectable={isConnectable}
                           style={{
                             position: 'relative',
                             right: 'auto',
                             top: 'auto',
                             transform: 'none',
-                            background: codeType === 'success' ? '#10b981' : 
-                                       codeType === 'error' ? '#f59e0b' : '#ef4444',
+                            background: '#6b7280',
                             width: '8px',
                             height: '8px',
                             border: '1px solid #fff'
                           }}
                         />
                       </div>
-                    ))}
-                    
-                    {/* NoMatch/Default connection */}
-                    <div className="condition-item">
-                      <span className="condition-text truncate-text" title="Default path when no conditions match">
-                        🔄 NoMatch
-                      </span>
-                      <Handle
-                        type="source"
-                        position={Position.Right}
-                        id={`response-${code}-NoMatch`}
-                        isConnectable={isConnectable}
-                        style={{
-                          position: 'relative',
-                          right: 'auto',
-                          top: 'auto',
-                          transform: 'none',
-                          background: '#6b7280',
-                          width: '8px',
-                          height: '8px',
-                          border: '1px solid #fff'
-                        }}
-                      />
                     </div>
                   </div>
                 );
@@ -158,27 +210,35 @@ const ActionNode = ({ data, isConnectable, selected }) => {
                 // Render single connection point for direct routing
                 return (
                   <div key={code} className={`transaction-item ${codeType}`}>
-                    <span className="transaction-text truncate-text" title={`Response Code: ${code}`}>
+                    <span 
+                      className="transaction-text truncate-text" 
+                      title={getConnectionTooltip(responseCode)}
+                    >
                       {code}
                       {code?.startsWith('5') && <span style={{ fontSize: '0.8em', marginLeft: '4px' }}>🔗</span>}
                     </span>
-                    <Handle
-                      type="source"
-                      position={Position.Right}
-                      id={`response-${code}`}
-                      isConnectable={isConnectable}
-                      style={{
-                        position: 'relative',
-                        right: 'auto',
-                        top: 'auto',
-                        transform: 'none',
-                        background: codeType === 'success' ? '#10b981' : 
-                                   codeType === 'error' ? '#f59e0b' : '#ef4444',
-                        width: '8px',
-                        height: '8px',
-                        border: '1px solid #fff'
-                      }}
-                    />
+                    <div 
+                      className="connection-handle-wrapper"
+                      title={getConnectionTooltip(responseCode)}
+                    >
+                      <Handle
+                        type="source"
+                        position={Position.Right}
+                        id={`response-${code}`}
+                        isConnectable={isConnectable}
+                        style={{
+                          position: 'relative',
+                          right: 'auto',
+                          top: 'auto',
+                          transform: 'none',
+                          background: codeType === 'success' ? '#10b981' : 
+                                     codeType === 'error' ? '#f59e0b' : '#ef4444',
+                          width: '8px',
+                          height: '8px',
+                          border: '1px solid #fff'
+                        }}
+                      />
+                    </div>
                   </div>
                 );
               }

@@ -12,17 +12,55 @@ const NodeConfigPanel = ({ selectedNode, onUpdateNode, onClose, allNodes = [] })
     const conditions = responseCode.conditions.filter(c => c.name && c.query);
     
     if (conditions.length === 0) {
-      return "-- No valid conditions defined\n-- Each condition should have a complete WHEN clause";
+      return "-- No valid conditions defined\n-- Each condition should have a complete SQL query or WHERE clause";
     }
     
-    // Generate CASE statement for each condition
-    // Admin inputs complete WHEN clause: "WHEN httpCode = 200 AND userStatus = 'SUB'" 
-    // We add the THEN part: "WHEN httpCode = 200 AND userStatus = 'SUB' THEN 'condition1'"
-    const caseStatements = conditions.map(condition => 
-      `      ${condition.query} THEN '${condition.name}'`
+    // Extract SELECT fields and WHERE conditions from the first query to determine pattern
+    let selectFields = "*";
+    const processedConditions = [];
+    
+    conditions.forEach(condition => {
+      let whereClause = condition.query.trim();
+      
+      // Check if user provided a full SELECT statement
+      if (whereClause.toUpperCase().startsWith('SELECT')) {
+        // Extract SELECT fields from the first condition
+        const selectMatch = whereClause.match(/SELECT\s+(.*?)\s+FROM\s+FLOWFILE/i);
+        if (selectMatch && selectFields === "*") {
+          selectFields = selectMatch[1].trim();
+        }
+        
+        // Extract WHERE clause after WHEN
+        const whenMatch = whereClause.match(/WHEN\s+(.*?)$/i);
+        if (whenMatch) {
+          whereClause = whenMatch[1].trim();
+        } else {
+          // If no WHEN found, try to extract condition after FROM FLOWFILE
+          const fromMatch = whereClause.match(/FROM\s+FLOWFILE\s+WHERE\s+(.*?)$/i);
+          if (fromMatch) {
+            whereClause = fromMatch[1].trim();
+          } else {
+            // Extract everything after WHEN if present
+            const directWhenMatch = whereClause.match(/WHEN\s+(.*?)$/i);
+            if (directWhenMatch) {
+              whereClause = directWhenMatch[1].trim();
+            }
+          }
+        }
+      }
+      
+      processedConditions.push({
+        name: condition.name,
+        whereClause: whereClause
+      });
+    });
+    
+    // Generate CASE statement for each processed condition
+    const caseStatements = processedConditions.map(condition => 
+      `      WHEN ${condition.whereClause} THEN '${condition.name}'`
     ).join('\n');
     
-    const query = `SELECT *,
+    const query = `SELECT ${selectFields},
   TRIM(
     CASE 
 ${caseStatements}
@@ -358,6 +396,76 @@ FROM FLOWFILE`;
       } else if (selectedNode.data.type === 'ACTION') {
         updatedConfig.templates = config.templates;
         updatedConfig.transactionCodes = config.transactionCodes;
+        updatedConfig.responseCodes = config.responseCodes;
+        
+        // Generate transitions and nextNodesMetadata based on responseCodes
+        const transitions = {};
+        const nextNodesMetadata = {};
+        
+        (config.responseCodes || []).forEach(responseCode => {
+          const code = responseCode.code;
+          if (!code) return;
+          
+          if (responseCode.isResponseParsingEnabled && responseCode.conditions?.length > 0) {
+            // Has conditional parsing enabled
+            nextNodesMetadata[code] = {
+              isResponseParsingEnabled: "Y",
+              queryRecord: generateQueryRecord(responseCode),
+              conditions: {}
+            };
+            
+            // Add each condition to nextNodesMetadata
+            responseCode.conditions.forEach((condition, index) => {
+              const conditionName = `condition${index + 1}`;
+              nextNodesMetadata[code].conditions[conditionName] = {
+                nextNodeType: null,
+                nextNodePrompts: {
+                  en: "",
+                  es: "",
+                  fr: "",
+                  ar: ""
+                },
+                nextNodeStoreAttribute: null,
+                nextNodeTemplateId: null
+              };
+            });
+            
+            // Add NoMatch condition
+            nextNodesMetadata[code].conditions["NoMatch"] = {
+              nextNodeType: null,
+              nextNodePrompts: {
+                en: "",
+                es: "",
+                fr: "",
+                ar: ""
+              },
+              nextNodeStoreAttribute: null,
+              nextNodeTemplateId: null
+            };
+          } else {
+            // No conditional parsing - direct connection
+            nextNodesMetadata[code] = {
+              isResponseParsingEnabled: "N",
+              queryRecord: null,
+              nextNodeType: null,
+              nextNodePrompts: {
+                en: "",
+                es: "",
+                fr: "",
+                ar: ""
+              },
+              nextNodeStoreAttribute: null,
+              nextNodeTemplateId: null
+            };
+          }
+          
+          // Set up basic transitions (these will be updated when connections are made)
+          transitions[code] = "";
+        });
+        
+        updatedConfig.transitions = transitions;
+        updatedConfig.nextNodesMetadata = nextNodesMetadata;
+        
         // Include dynamic menu fields if they exist
         if (config.templateId) {
           updatedConfig.templateId = config.templateId;
@@ -721,13 +829,15 @@ FROM FLOWFILE`;
                             marginTop: '0.5rem'
                           }}>
                             <div style={{ marginBottom: '1rem', color: '#374151', fontSize: '0.875rem' }}>
-                              📝 <strong>How it works:</strong> Admin inputs SQL condition fragments (e.g., "userStatus = 'SUB'").
+                              📝 <strong>Enter SQL conditions in one of these formats:</strong>
                               <br />
-                              🔗 During export, all conditions will be combined into a single CASE statement:
+                              � <strong>Simple WHERE clause:</strong> httpCode = 200 AND userStatus = 'SUB'
                               <br />
-                              📋 Example: WHEN httpCode = {responseCode.code} AND userStatus = 'SUB' THEN 'condition1'
+                              � <strong>Full SELECT query:</strong> SELECT fetchquery FROM FLOWFILE WHEN httpCode = 200 AND userStatus = 'SUB'
                               <br />
-                              🎯 <strong>Note:</strong> Condition names (condition1, condition2, etc.) are auto-generated and will be used as path names.
+                              🔗 <strong>Note:</strong> If you use SELECT, the fields will be extracted and used for the final query.
+                              <br />
+                              🎯 <strong>Condition names (condition1, condition2, etc.) are auto-generated.</strong>
                             </div>
                             
                             {(responseCode.conditions || []).map((condition, condIndex) => (
@@ -761,7 +871,7 @@ FROM FLOWFILE`;
                                     newCodes[index] = { ...newCodes[index], conditions: newConditions };
                                     setConfig(prev => ({ ...prev, responseCodes: newCodes }));
                                   }}
-                                  placeholder="WHEN httpCode = 200 AND userStatus = 'SUB'"
+                                  placeholder="httpCode = 200 AND userStatus = 'SUB' OR SELECT fetchquery FROM FLOWFILE WHEN httpCode = 200 AND userStatus = 'SUB'"
                                   className="sql-condition-input"
                                 />
                                 <button
@@ -1183,7 +1293,7 @@ FROM FLOWFILE`;
                                         newCodes[index] = { ...newCodes[index], conditions: newConditions };
                                         setConfig(prev => ({ ...prev, responseCodes: newCodes }));
                                       }}
-                                      placeholder="WHEN httpCode = 200 AND userStatus = 'SUB'"
+                                      placeholder="httpCode = 200 AND userStatus = 'SUB' OR SELECT fetchquery FROM FLOWFILE WHEN httpCode = 200 AND userStatus = 'SUB'"
                                       className="sql-condition-input"
                                     />
                                     <button
