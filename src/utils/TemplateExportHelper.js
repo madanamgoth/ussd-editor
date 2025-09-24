@@ -6,20 +6,44 @@
 /**
  * Create a clean template for NiFi export (removes graph editor metadata)
  * @param {Object} templateData - Full template data with metadata
- * @returns {Object} Clean template for NiFi consumption
+ * @returns {Array} Clean template wrapped in array for NiFi consumption
  */
 export const createNiFiTemplate = (templateData) => {
+  // Helper function to add input wrapper to shift operations if missing
+  const addInputWrapperToJoltSpec = (joltSpec) => {
+    if (!Array.isArray(joltSpec)) return [];
+    
+    return joltSpec.map(operation => {
+      if (operation.operation === 'shift' && operation.spec) {
+        // Check if the spec already has an "input" wrapper
+        const hasInputWrapper = operation.spec.hasOwnProperty('input');
+        
+        if (!hasInputWrapper) {
+          // Wrap the existing spec in "input"
+          return {
+            ...operation,
+            spec: {
+              input: operation.spec
+            }
+          };
+        }
+      }
+      // Return unchanged for non-shift operations or already wrapped operations
+      return operation;
+    });
+  };
+
   const cleanTemplate = {
     ...templateData,
     requestTemplate: {
       joltSpec: templateData.requestTemplate?.joltSpec || []
     },
     responseTemplate: {
-      joltSpec: templateData.responseTemplate?.joltSpec || []
+      joltSpec: addInputWrapperToJoltSpec(templateData.responseTemplate?.joltSpec || [])
       // Note: responseMapping is excluded - it's only for graph editor field extraction
     },
     responseErrorTemplate: {
-      joltSpec: templateData.responseErrorTemplate?.joltSpec || []
+      joltSpec: addInputWrapperToJoltSpec(templateData.responseErrorTemplate?.joltSpec || [])
     }
   };
   
@@ -40,7 +64,8 @@ export const createNiFiTemplate = (templateData) => {
     cleanTemplate.isNextMenuDynamic = templateData.isNextMenuDynamic;
   }
   
-  return cleanTemplate;
+  // Return as array instead of single object
+  return [cleanTemplate];
 };
 
 /**
@@ -59,7 +84,8 @@ export const hasGraphMetadata = (templateData) => {
  */
 export const getTemplateSizeInfo = (templateData) => {
   const fullSize = JSON.stringify(templateData).length;
-  const cleanSize = JSON.stringify(createNiFiTemplate(templateData)).length;
+  const cleanTemplateArray = createNiFiTemplate(templateData);
+  const cleanSize = JSON.stringify(cleanTemplateArray).length;
   
   return {
     fullSize,
@@ -100,11 +126,13 @@ export const validateForNiFiExport = (templateData) => {
     warnings.push('Template contains graph editor metadata (will be removed in export)');
   }
   
+  const cleanTemplateArray = createNiFiTemplate(templateData);
+  
   return {
     isValid: errors.length === 0,
     errors,
     warnings,
-    cleanTemplate: createNiFiTemplate(templateData)
+    cleanTemplate: cleanTemplateArray
   };
 };
 
