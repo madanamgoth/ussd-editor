@@ -820,6 +820,27 @@ export const exportToFlowFormat = (nodes, edges) => {
         ]);
       }
       
+      // Add queryformBodySpec - check template data if not in config
+      let queryformBodySpec = config.queryformBodySpec;
+      
+      // If not in config, extract from template data
+      if (!queryformBodySpec || queryformBodySpec === "NA") {
+        if (config.templates && config.templates.length > 0) {
+          const firstTemplate = config.templates[0];
+          if (firstTemplate.requestTemplate?.queryformBodySpec) {
+            queryformBodySpec = JSON.stringify(firstTemplate.requestTemplate.queryformBodySpec);
+          } else if (firstTemplate.queryformBodySpec) {
+            queryformBodySpec = firstTemplate.queryformBodySpec;
+          }
+        }
+      }
+      
+      if (queryformBodySpec && queryformBodySpec !== "NA") {
+        cleanNode.queryformBodySpec = queryformBodySpec;
+      } else {
+        cleanNode.queryformBodySpec = "NA";
+      }
+      
       if (config.menuName) {
         cleanNode.menuName = config.menuName;
       }
@@ -867,6 +888,9 @@ export const importFromFlowFormat = (flowData) => {
     }
     if (flowNode.sessionSpec) {
       node.data.config.sessionSpec = flowNode.sessionSpec;
+    }
+    if (flowNode.queryformBodySpec) {
+      node.data.config.queryformBodySpec = flowNode.queryformBodySpec;
     }
     if (flowNode.menuName) {
       node.data.config.menuName = flowNode.menuName;

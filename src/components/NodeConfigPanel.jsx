@@ -550,6 +550,9 @@ FROM FLOWFILE`;
     if (templateData.isNextMenuDynamic) {
       updatedConfig.isNextMenuDynamic = templateData.isNextMenuDynamic;
     }
+    if (templateData.queryformBodySpec) {
+      updatedConfig.queryformBodySpec = templateData.queryformBodySpec;
+    }
     
     setConfig(updatedConfig);
     setShowTemplateCreator(false);

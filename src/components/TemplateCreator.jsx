@@ -717,11 +717,23 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
       const templateId = prompt('Enter Template ID (e.g., PaymentStatus, GetBalance, TransferMoney):');
       if (!templateId) return;
 
+      // For GET requests, trim query parameters from endpoint since they'll be provided dynamically
+      let cleanEndpoint = url;
+      if (method === 'GET' && Object.keys(queryParams).length > 0) {
+        try {
+          const urlObj = new URL(url);
+          cleanEndpoint = `${urlObj.origin}${urlObj.pathname}?`;
+          console.log(`🔧 GET request: Trimmed endpoint from ${url} to ${cleanEndpoint}`);
+        } catch (error) {
+          console.log('⚠️ Could not parse URL for trimming, using original:', url);
+        }
+      }
+
       setTemplateData(prev => ({
         ...prev,
         _id: templateId,
         target: {
-          endpoint: url,
+          endpoint: cleanEndpoint,
           method: method,
           headers
         }
@@ -1348,25 +1360,23 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
       });
       
       if (field.mappingType === 'dynamic' && field.storeAttribute) {
+        // ALL dynamic fields should use input wrapper since they represent session variables/user input
+        if (!requestShiftSpec.input) requestShiftSpec.input = {};
+        
         if (field.category === 'query') {
-          // For query parameters: source is storeAttribute (user selection), target is Template.path (original param name)
+          // For query parameters: input.sessionVar → Template.originalParam
           const wrappedTarget = `${templateName}.${field.path || field.storeAttribute}`;
-          setNestedValue(requestShiftSpec, field.storeAttribute, wrappedTarget);
-          console.log(`✅ Query param (dynamic): ${field.storeAttribute} → ${wrappedTarget} (original param: ${field.path})`);
+          setNestedValue(requestShiftSpec.input, field.storeAttribute, wrappedTarget);
+          console.log(`✅ Query param (dynamic with input): input.${field.storeAttribute} → ${wrappedTarget} (original param: ${field.path})`);
         } else if (field.category === 'body' && field.isUrlencoded) {
-          // For --data-urlencode body fields, use template name wrapping
+          // For --data-urlencode body fields: input.sessionVar → Template.originalParam  
           const wrappedTarget = `${templateName}.${field.path || field.storeAttribute}`;
-          setNestedValue(requestShiftSpec, field.storeAttribute, wrappedTarget);
-          console.log(`✅ Body field (--data-urlencode with template wrapping): ${field.storeAttribute} → ${wrappedTarget}`);
+          setNestedValue(requestShiftSpec.input, field.storeAttribute, wrappedTarget);
+          console.log(`✅ Body field (--data-urlencode with input): input.${field.storeAttribute} → ${wrappedTarget}`);
         } else {
-          // Regular dynamic fields (JSON body, nested body, session variables, etc.) - use input wrapper
-          console.log(`⚠️ Regular field "${field.storeAttribute}" using input wrapper (category="${field.category}", isUrlencoded=${field.isUrlencoded})`);
-          if (field.storeAttribute === 'PASSWORD') {
-            console.log(`🚨 FOUND PASSWORD FIELD! Details:`, field);
-          }
-          if (!requestShiftSpec.input) requestShiftSpec.input = {};
+          // Regular dynamic fields (JSON body, nested fields): input.sessionVar → targetPath
           setNestedValue(requestShiftSpec.input, field.storeAttribute, field.targetPath || field.path);
-          console.log(`✅ Dynamic field: input.${field.storeAttribute} → ${field.targetPath || field.path}`);
+          console.log(`✅ Dynamic field (with input): input.${field.storeAttribute} → ${field.targetPath || field.path}`);
         }
       } else if (field.mappingType === 'static' && field.category !== 'header') {
         if (field.category === 'query') {
@@ -1405,6 +1415,92 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
     Object.keys(staticFields).forEach(path => {
       setNestedValue(requestDefaultSpec, path, staticFields[path]);
     });
+
+    // Check if we need queryformBodySpec (GET with query params or POST with form-urlencoded)
+    const method = templateData?.target?.method || 'GET';
+    const headers = templateData?.target?.headers || {};
+    
+    // Debug headers to see what's actually stored
+    console.log('🔍 DEBUG: method =', method);
+    console.log('🔍 DEBUG: headers =', headers);
+    console.log('🔍 DEBUG: Content-Type header =', headers['Content-Type']);
+    
+    // Check for form-urlencoded with case-insensitive header matching
+    const contentType = Object.keys(headers).find(key => 
+      key.toLowerCase() === 'content-type'
+    );
+    const isFormUrlencoded = contentType && headers[contentType] && 
+      headers[contentType].includes('application/x-www-form-urlencoded');
+    
+    console.log('🔍 DEBUG: contentType key =', contentType);
+    console.log('🔍 DEBUG: contentType value =', contentType ? headers[contentType] : 'N/A');
+    console.log('🔍 DEBUG: isFormUrlencoded =', isFormUrlencoded);
+    console.log('🔍 DEBUG: has query fields =', requestMapping.some(f => f.category === 'query'));
+    console.log('🔍 DEBUG: has urlencoded body fields =', requestMapping.some(f => f.category === 'body' && f.isUrlencoded));
+    console.log('🔍 DEBUG: requestMapping details =', requestMapping.map(f => `${f.path}(${f.category}${f.isUrlencoded ? ',urlencoded' : ''})`));
+    console.log('🔍 DEBUG: Full requestMapping dump:', JSON.stringify(requestMapping.filter(f => f.category !== 'header'), null, 2));
+    
+    const needsQueryFormBodySpec = (
+      (method === 'GET' && requestMapping.some(f => f.category === 'query')) ||
+      (method === 'POST' && isFormUrlencoded)
+    );
+    
+    console.log('🎯 QUERYFORMBODYSPEC DECISION:');
+    console.log('  - Method:', method);
+    console.log('  - Is POST:', method === 'POST');
+    console.log('  - Is form-urlencoded:', isFormUrlencoded);
+    console.log('  - GET + query:', method === 'GET' && requestMapping.some(f => f.category === 'query'));
+    console.log('  - POST + form:', method === 'POST' && isFormUrlencoded);
+    console.log('  - Final decision:', needsQueryFormBodySpec);
+    
+    let queryformBodySpec = null;
+    
+    if (needsQueryFormBodySpec) {
+      console.log('🔧 Creating queryformBodySpec for form-urlencoded processing');
+      
+      // Get all query/form parameters 
+      const formFields = requestMapping.filter(f => 
+        f.category === 'query' || (f.category === 'body' && f.isUrlencoded)
+      );
+      
+      if (formFields.length > 0) {
+        const shiftSpec = {};
+        const concatParts = [];
+        const removeSpec = {};
+        
+        // Build shift spec and concat parts
+        formFields.forEach((field, index) => {
+          const paramName = field.path || field.storeAttribute;
+          shiftSpec[paramName] = paramName; // Fixed: direct mapping, not templateName.field
+          removeSpec[paramName] = "";
+          
+          if (index > 0) concatParts.push("'&'");
+          concatParts.push(`'${paramName}='`);
+          concatParts.push(`@(1,${paramName})`);
+        });
+        
+        queryformBodySpec = [
+          {
+            "operation": "shift",
+            "spec": {
+              [templateName]: shiftSpec
+            }
+          },
+          {
+            "operation": "modify-overwrite-beta", 
+            "spec": {
+              "formBody": `=concat(${concatParts.join(',')})`
+            }
+          },
+          {
+            "operation": "remove",
+            "spec": removeSpec
+          }
+        ];
+        
+        console.log('✅ Generated queryformBodySpec:', JSON.stringify(queryformBodySpec, null, 2));
+      }
+    }
 
     // Assemble request JOLT and filter out empty operations
     const rawRequestJolt = [
@@ -1468,7 +1564,10 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
 
     setTemplateData(prev => ({
       ...prev,
-      requestTemplate: { joltSpec: requestJolt },
+      requestTemplate: { 
+        joltSpec: requestJolt,
+        queryformBodySpec: queryformBodySpec || "NA"
+      },
       responseTemplate: { 
         joltSpec: responseJolt,
         responseMapping: responseMapping // GRAPH METADATA: Saved for field extraction, NOT exported to NiFi
@@ -1481,7 +1580,10 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
 
   const handleSave = () => {
     // Prepare the template data with dynamic menu fields if enabled
-    let finalTemplateData = { ...templateData };
+    let finalTemplateData = { 
+      ...templateData,
+      queryformBodySpec: templateData.requestTemplate?.queryformBodySpec === "NA" ? "NA" : JSON.stringify(templateData.requestTemplate?.queryformBodySpec || "NA")
+    };
     
     if (isDynamicMenuNext) {
       // Generate session spec for dynamic menu
@@ -1591,6 +1693,7 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
         ...finalTemplateData,
         templateId: templateId,
         sessionSpec: JSON.stringify(sessionSpec),
+        queryformBodySpec: finalTemplateData.requestTemplate?.queryformBodySpec === "NA" ? "NA" : JSON.stringify(finalTemplateData.requestTemplate?.queryformBodySpec),
         menuName: menuJoltKey,
         menuJolt: JSON.stringify(menuJolt),
         isNextMenuDynamic: "Y"
