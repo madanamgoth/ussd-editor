@@ -505,18 +505,10 @@ export const exportToFlowFormat = (nodes, edges) => {
               }
             }
           } else if (nodeType === 'DYNAMIC-MENU') {
-            // For DYNAMIC-MENU nodes, handle simplified connections
-            if (sourceHandle === 'dynamic-output') {
-              // Main dynamic output - runtime routing handled by routing strategy
-              cleanTransitions['*'] = edge.target;
-              if (metadata) {
-                nextNodeMetadata['*'] = metadata;
-              }
-            } else if (sourceHandle === 'fallback') {
-              cleanTransitions['fallback'] = edge.target;
-              if (metadata) {
-                nextNodeMetadata['fallback'] = metadata;
-              }
+            // For DYNAMIC-MENU nodes, always map to * for dynamic routing
+            cleanTransitions['*'] = edge.target;
+            if (metadata) {
+              nextNodeMetadata['*'] = metadata;
             }
           } else if (nodeType === 'START') {
             // For START nodes, use configured USSD code or empty string like previous version
@@ -752,7 +744,27 @@ export const exportToFlowFormat = (nodes, edges) => {
       
       // Add sessionSpec based on dynamic menu status
       if (isDynamic) {
-        // Dynamic menu sessionSpec (always generate clean version)
+        // Get template name for dynamic sessionSpec - use templateId or extract from first template
+        let templateName = 'DefaultTemplate'; // Fallback name
+        
+        if (config.templateId && config.templateId.trim() !== '') {
+          templateName = config.templateId;
+        } else if (config.templates && config.templates.length > 0) {
+          const firstTemplate = config.templates[0];
+          if (firstTemplate._id && firstTemplate._id.trim() !== '') {
+            templateName = firstTemplate._id;
+          } else if (firstTemplate.name && firstTemplate.name.trim() !== '') {
+            templateName = firstTemplate.name;
+          }
+        }
+        
+        // Clean template name (remove spaces, special characters, make camelCase)
+        const cleanTemplateName = templateName
+          .replace(/[^a-zA-Z0-9_]/g, '') // Remove special characters
+          .replace(/^[0-9]/, '_$&') // Prefix with _ if starts with number
+          || 'DefaultTemplate'; // Final fallback
+        
+        // Dynamic menu sessionSpec with dynamic template name
         cleanNode.sessionSpec = JSON.stringify([
           {
             "operation": "shift",
@@ -768,7 +780,7 @@ export const exportToFlowFormat = (nodes, edges) => {
               "*": "&",
               "fiction_menu": {
                 "*": {
-                  "@": "TransferMoney.&"
+                  "@": `${cleanTemplateName}.&`
                 }
               }
             }
@@ -776,7 +788,7 @@ export const exportToFlowFormat = (nodes, edges) => {
           {
             "operation": "modify-overwrite-beta",
             "spec": {
-              "TransferMoney": "=recursivelySortKeys"
+              [cleanTemplateName]: "=recursivelySortKeys"
             }
           },
           {
