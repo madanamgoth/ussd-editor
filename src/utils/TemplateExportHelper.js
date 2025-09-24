@@ -9,6 +9,35 @@
  * @returns {Array} Clean template wrapped in array for NiFi consumption
  */
 export const createNiFiTemplate = (templateData) => {
+  // Helper function to check if a JOLT operation is empty
+  const isJoltOperationEmpty = (operation) => {
+    if (!operation.spec) return true;
+    
+    if (operation.operation === 'shift') {
+      // For shift operations, check if input is empty
+      if (operation.spec.input && Object.keys(operation.spec.input).length === 0) {
+        return true;
+      }
+      // For non-input shift specs, check if spec is empty
+      if (!operation.spec.input && Object.keys(operation.spec).length === 0) {
+        return true;
+      }
+    } else if (operation.operation === 'default') {
+      // For default operations, check if spec is empty
+      if (Object.keys(operation.spec).length === 0) {
+        return true;
+      }
+    }
+    
+    return false;
+  };
+
+  // Helper function to filter out empty JOLT operations
+  const filterEmptyJoltOperations = (joltSpec) => {
+    if (!Array.isArray(joltSpec)) return [];
+    return joltSpec.filter(operation => !isJoltOperationEmpty(operation));
+  };
+
   // Helper function to add input wrapper to shift operations if missing
   const addInputWrapperToJoltSpec = (joltSpec) => {
     if (!Array.isArray(joltSpec)) return [];
@@ -33,17 +62,24 @@ export const createNiFiTemplate = (templateData) => {
     });
   };
 
+  // Process and clean JOLT specs: filter empty operations and add input wrappers
+  const processJoltSpec = (joltSpec) => {
+    const withInputWrappers = addInputWrapperToJoltSpec(joltSpec);
+    const filteredSpec = filterEmptyJoltOperations(withInputWrappers);
+    return filteredSpec;
+  };
+
   const cleanTemplate = {
     ...templateData,
     requestTemplate: {
-      joltSpec: templateData.requestTemplate?.joltSpec || []
+      joltSpec: filterEmptyJoltOperations(templateData.requestTemplate?.joltSpec || [])
     },
     responseTemplate: {
-      joltSpec: addInputWrapperToJoltSpec(templateData.responseTemplate?.joltSpec || [])
+      joltSpec: processJoltSpec(templateData.responseTemplate?.joltSpec || [])
       // Note: responseMapping is excluded - it's only for graph editor field extraction
     },
     responseErrorTemplate: {
-      joltSpec: addInputWrapperToJoltSpec(templateData.responseErrorTemplate?.joltSpec || [])
+      joltSpec: processJoltSpec(templateData.responseErrorTemplate?.joltSpec || [])
     }
   };
   

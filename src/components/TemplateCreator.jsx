@@ -535,24 +535,41 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
         }
       }
       
-      // Parse URL
+      // Parse URL - Enhanced to handle multi-line curl with query parameters
       const urlMatches = [
+        // Handle quoted URLs with query parameters (most common)
+        curlInput.match(/curl\s+(?:--location\s+(?:--request\s+\w+\s+)?)?\\?\s*['"]([^'"]+)['"]/),
+        curlInput.match(/(?:--location|curl)\s+(?:--request\s+\w+\s+)?\\?\s*['"]([^'"]+)['"]/),
+        // Handle URLs after --request GET with backslashes
+        curlInput.match(/--request\s+GET\s+\\?\s*['"]([^'"]+)['"]/),
+        // Handle any quoted http URL
+        curlInput.match(/['"]([^'"]*https?:\/\/[^'"]*)['"]/),
+        // Handle unquoted URLs
+        curlInput.match(/(https?:\/\/[^\s'"\\]+(?:\?[^\s'"\\\n]*)?)/),
+        // Original patterns as fallback
         curlInput.match(/curl\s+(?:--location\s+)?['"]([^'"]+)['"]/),
         curlInput.match(/curl\s+(?:--location\s+)?['"]?([^\s'"]+)['"]?/),
-        curlInput.match(/(?:--location|curl)\s+['"]([^'"]+)['"]/),
-        curlInput.match(/['"]([^'"]*http[^'"]*)['"]/),
         curlInput.match(/(https?:\/\/[^\s'"]+)/)
       ];
       
       for (const match of urlMatches) {
         if (match && match[1]) {
           url = match[1];
+          console.log(`✅ URL extracted: ${url}`);
           break;
         }
       }
       
       if (!url) {
-        throw new Error('Could not extract URL from cURL command');
+        console.log('❌ Failed to extract URL. Trying manual patterns...');
+        // Try a more aggressive pattern for your specific format
+        const manualMatch = curlInput.match(/http[s]?:\/\/[^\s'"\\]+(?:\?[^\s'"\\]*)?/);
+        if (manualMatch) {
+          url = manualMatch[0];
+          console.log(`✅ Manual URL extraction: ${url}`);
+        } else {
+          throw new Error('Could not extract URL from cURL command');
+        }
       }
       
       // Parse headers
@@ -654,13 +671,17 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
       
       // Extract query parameters from URL
       try {
+        console.log('🔍 Parsing URL for query params:', url);
         const urlObj = new URL(url);
+        console.log('🔍 URL object created, searchParams:', urlObj.searchParams.toString());
         urlObj.searchParams.forEach((value, key) => {
           queryParams[key] = value;
+          console.log(`🔗 Found query param: ${key} = ${value}`);
         });
-        console.log('🔗 Query parameters found:', queryParams);
+        console.log('🔗 Final query parameters object:', queryParams);
       } catch (urlError) {
         console.log('⚠️ Could not parse URL for query parameters:', urlError);
+        console.log('⚠️ URL was:', url);
       }
 
       const templateId = prompt('Enter Template ID (e.g., PaymentStatus, GetBalance, TransferMoney):');
@@ -693,8 +714,9 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
       });
       
       // 2. Extract query parameter fields (RESTful query params)
+      console.log(`🔍 Processing ${Object.keys(queryParams).length} query parameters...`);
       Object.keys(queryParams).forEach(paramName => {
-        allFields.push({
+        const queryField = {
           path: `query.${paramName}`,
           value: queryParams[paramName],
           type: 'string',
@@ -702,7 +724,9 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
           mappingType: 'dynamic', // Query params often dynamic
           storeAttribute: paramName, // ✅ PRESERVE ORIGINAL CASE
           targetPath: `query.${paramName}`
-        });
+        };
+        allFields.push(queryField);
+        console.log(`✅ Added query field:`, queryField);
       });
       
       // 3. Extract body fields recursively (handles complex nested JSON)
@@ -1203,23 +1227,75 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
   };
 
   // Generate JOLT specifications
+  // Helper function to check if a JOLT operation is empty
+  const isJoltOperationEmpty = (operation) => {
+    if (!operation.spec) return true;
+    
+    if (operation.operation === 'shift') {
+      // For shift operations, check if input is empty
+      if (operation.spec.input && Object.keys(operation.spec.input).length === 0) {
+        return true;
+      }
+      // For non-input shift specs, check if spec is empty
+      if (!operation.spec.input && Object.keys(operation.spec).length === 0) {
+        return true;
+      }
+    } else if (operation.operation === 'default') {
+      // For default operations, check if spec is empty
+      if (Object.keys(operation.spec).length === 0) {
+        return true;
+      }
+    }
+    
+    return false;
+  };
+
+  // Helper function to filter out empty JOLT operations
+  const filterEmptyJoltOperations = (joltSpec) => {
+    return joltSpec.filter(operation => !isJoltOperationEmpty(operation));
+  };
+
   const generateJoltSpecs = () => {
+    // Get template name for query parameter wrapping
+    const templateName = templateData._id || 'TEMPLATE';
+    
     // Request template with input wrapper
     const requestShiftSpec = {
       input: {}
     };
     const requestDefaultSpec = {};
 
-    // Only include DYNAMIC fields in the input object
+    // Process fields with special handling for query parameters
     requestMapping.forEach(field => {
       if (field.mappingType === 'dynamic' && field.storeAttribute) {
-        // Only dynamic fields go to input - PRESERVE EXACT FIELD NAMES
-        setNestedValue(requestShiftSpec.input, field.storeAttribute, field.targetPath || field.path);
-        console.log(`✅ Dynamic field: input.${field.storeAttribute} → ${field.targetPath || field.path}`);
+        if (field.category === 'query') {
+          // For query parameters, use template name wrapping: templateName.fieldName
+          const wrappedTarget = `${templateName}.${field.storeAttribute}`;
+          setNestedValue(requestShiftSpec.input, field.storeAttribute, wrappedTarget);
+          console.log(`✅ Query param (dynamic): input.${field.storeAttribute} → ${wrappedTarget}`);
+        } else {
+          // Regular dynamic fields (body, session variables, etc.)
+          setNestedValue(requestShiftSpec.input, field.storeAttribute, field.targetPath || field.path);
+          console.log(`✅ Dynamic field: input.${field.storeAttribute} → ${field.targetPath || field.path}`);
+        }
       } else if (field.mappingType === 'static' && field.category !== 'header') {
-        // Static fields go to default spec (but NOT headers - headers go to target.headers)
-        setNestedValue(requestDefaultSpec, field.targetPath || field.path, field.staticValue || field.value);
-        console.log(`✅ Static field: ${field.targetPath || field.path} = ${field.staticValue || field.value}`);
+        if (field.category === 'query') {
+          // For static query parameters, add to default spec with template wrapping
+          const wrappedTarget = `${templateName}.${field.storeAttribute}`;
+          setNestedValue(requestDefaultSpec, wrappedTarget, field.staticValue || field.value);
+          console.log(`✅ Query param (static): ${wrappedTarget} = ${field.staticValue || field.value}`);
+        } else {
+          // Regular static fields (body fields)
+          setNestedValue(requestDefaultSpec, field.targetPath || field.path, field.staticValue || field.value);
+          console.log(`✅ Static field: ${field.targetPath || field.path} = ${field.staticValue || field.value}`);
+        }
+      } else if (field.mappingType === 'session' && field.category === 'query') {
+        // For session query parameters, map from session variable to template-wrapped target
+        if (field.storeAttribute) {
+          const wrappedTarget = `${templateName}.${field.storeAttribute}`;
+          setNestedValue(requestShiftSpec.input, field.storeAttribute, wrappedTarget);
+          console.log(`✅ Query param (session): input.${field.storeAttribute} → ${wrappedTarget}`);
+        }
       }
     });
 
@@ -1228,7 +1304,8 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
       setNestedValue(requestDefaultSpec, path, staticFields[path]);
     });
 
-    const requestJolt = [
+    // Assemble request JOLT and filter out empty operations
+    const rawRequestJolt = [
       {
         operation: "shift",
         spec: requestShiftSpec
@@ -1238,9 +1315,12 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
         spec: requestDefaultSpec
       }
     ];
+    
+    const requestJolt = filterEmptyJoltOperations(rawRequestJolt);
+    console.log(`✅ Request JOLT: Filtered ${rawRequestJolt.length - requestJolt.length} empty operations`);
 
     // Use generated response and error mappings with proper defaults
-    const responseJolt = responseMapping.generated || [
+    const rawResponseJolt = responseMapping.generated || [
       {
         operation: "shift",
         spec: {
@@ -1257,7 +1337,7 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
       }
     ];
 
-    const errorJolt = errorMapping.generated || [
+    const rawErrorJolt = errorMapping.generated || [
       {
         operation: "shift",
         spec: {
@@ -1276,6 +1356,13 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
         }
       }
     ];
+
+    // Filter out empty operations from response and error JOLT
+    const responseJolt = filterEmptyJoltOperations(rawResponseJolt);
+    const errorJolt = filterEmptyJoltOperations(rawErrorJolt);
+    
+    console.log(`✅ Response JOLT: Filtered ${rawResponseJolt.length - responseJolt.length} empty operations`);
+    console.log(`✅ Error JOLT: Filtered ${rawErrorJolt.length - errorJolt.length} empty operations`);
 
     setTemplateData(prev => ({
       ...prev,
@@ -1844,6 +1931,20 @@ curl -X PUT 'http://api.example.com/endpoint' \\
                category === 'query' ? '🔗 Query Parameters' : 
                '📝 Request Body'}
             </h4>
+            
+            {category === 'query' && (
+              <div className="category-note" style={{
+                backgroundColor: '#e3f2fd', 
+                padding: '8px 12px', 
+                borderRadius: '4px', 
+                fontSize: '12px', 
+                marginBottom: '10px',
+                border: '1px solid #1976d2'
+              }}>
+                <strong>📌 Query Parameter Note:</strong> These will be wrapped with template name in JOLT spec 
+                (e.g., <code>{templateData._id || 'TEMPLATE'}.grant_type</code>) for proper NiFi handling.
+              </div>
+            )}
             
             <div className="field-mapping">
               {fieldsByCategory[category].map((field, categoryIndex) => {
