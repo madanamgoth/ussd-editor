@@ -464,7 +464,7 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
   };
 
   // Extract fields from nested object - IMPROVED VERSION FROM EXAMPLE
-  const extractFieldsFromObject = (obj, prefix = '', results = []) => {
+  const extractFieldsFromObject = (obj, prefix = '', results = [], urlencodeParams = new Set()) => {
     console.log('Extracting fields from object:', obj, 'prefix:', prefix);
     
     if (!obj || typeof obj !== 'object') {
@@ -477,11 +477,11 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
       
       if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
         // Recursively extract from nested objects (unlimited depth)
-        extractFieldsFromObject(value, fullPath, results);
+        extractFieldsFromObject(value, fullPath, results, urlencodeParams);
       } else if (Array.isArray(value)) {
         // Handle arrays - extract first element as template
         if (value.length > 0 && typeof value[0] === 'object') {
-          extractFieldsFromObject(value[0], `${fullPath}[0]`, results);
+          extractFieldsFromObject(value[0], `${fullPath}[0]`, results, urlencodeParams);
         } else {
           // Simple array
           results.push({
@@ -491,7 +491,8 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
             category: 'body',
             mappingType: 'dynamic',
             storeAttribute: key, // ✅ PRESERVE ORIGINAL CASE
-            targetPath: fullPath
+            targetPath: fullPath,
+            isUrlencoded: urlencodeParams.has(key) // Mark if from --data-urlencode
           });
         }
       } else {
@@ -504,7 +505,8 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
                    prefix.includes('query') ? 'query' : 'body',
           mappingType: 'dynamic', // Default to dynamic for body fields
           storeAttribute: key, // ✅ PRESERVE ORIGINAL CASE - don't convert to lowercase
-          targetPath: fullPath
+          targetPath: fullPath,
+          isUrlencoded: urlencodeParams.has(key) // Mark if from --data-urlencode
         });
       }
     });
@@ -515,6 +517,15 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
   // Step 1: Parse cURL command with robust regex parsing
   const parseCurlCommand = () => {
     try {
+      console.log('🐛 DEBUG: Starting fresh curl parsing - clearing previous state');
+      // Clear ALL previous state to ensure no leftover fields
+      setRequestMapping([]);
+      setResponseMapping({ generated: [] });
+      setErrorMapping({ generated: [] });
+      setStaticFields({});
+      setTemplateData({});
+      console.log('🐛 DEBUG: All state cleared');
+      
       console.log('Parsing cURL:', curlInput);
       
       // Extract basic information using regex
@@ -668,6 +679,25 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
       } else {
         console.log('ℹ️ No body data found in cURL');
       }
+
+      // Parse --data-urlencode parameters (like grant_type=client_credentials)
+      const dataUrlencodeRegex = /--data-urlencode\s+['"]([^=]+)=([^'"]+)['"]/g;
+      let urlencodeMatch;
+      let urlencodeCount = 0;
+      const urlencodeParams = new Set(); // Track which parameters are from --data-urlencode
+      while ((urlencodeMatch = dataUrlencodeRegex.exec(curlInput)) !== null) {
+        const key = urlencodeMatch[1].trim();
+        const value = urlencodeMatch[2].trim();
+        body[key] = value;
+        urlencodeParams.add(key); // Mark this as --data-urlencode parameter
+        urlencodeCount++;
+        console.log(`🔗 Found --data-urlencode param ${urlencodeCount}: ${key} = ${value}`);
+      }
+      
+      if (urlencodeCount > 0) {
+        console.log(`✅ Total --data-urlencode parameters found: ${urlencodeCount}`);
+        console.log('✅ Body updated with URL-encoded data:', Object.keys(body));
+      }
       
       // Extract query parameters from URL
       try {
@@ -717,16 +747,17 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
       console.log(`🔍 Processing ${Object.keys(queryParams).length} query parameters...`);
       Object.keys(queryParams).forEach(paramName => {
         const queryField = {
-          path: `query.${paramName}`,
+          path: paramName, // ✅ Use just parameter name, no "query." prefix
           value: queryParams[paramName],
           type: 'string',
           category: 'query',
           mappingType: 'dynamic', // Query params often dynamic
           storeAttribute: paramName, // ✅ PRESERVE ORIGINAL CASE
-          targetPath: `query.${paramName}`
+          targetPath: paramName // ✅ Use just parameter name
         };
         allFields.push(queryField);
         console.log(`✅ Added query field:`, queryField);
+        console.log(`🐛 DEBUG: Query field details - path: ${queryField.path}, category: ${queryField.category}, mappingType: ${queryField.mappingType}, storeAttribute: ${queryField.storeAttribute}`);
       });
       
       // 3. Extract body fields recursively (handles complex nested JSON)
@@ -734,7 +765,7 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
         try {
           // Only extract individual fields if it's proper JSON, not raw data
           if (!body.raw) {
-            extractFieldsFromObject(body, '', allFields);
+            extractFieldsFromObject(body, '', allFields, urlencodeParams);
           } else {
             // If it's raw data, add it as a single field
             allFields.push({
@@ -767,6 +798,21 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
       console.log(`   🔗 Query Params: ${Object.keys(queryParams).length}`);
       console.log(`   📝 Body Fields: ${allFields.filter(f => f.category === 'body').length}`);
       console.log(`   🔥 Total Fields: ${allFields.length}`);
+      
+      console.log('🐛 DEBUG: All fields being set to requestMapping:');
+      allFields.forEach((field, index) => {
+        if (field.category !== 'header') { // Skip headers for clarity
+          console.log(`🐛 Field ${index}: ${field.path} = "${field.value}" (${field.category}, ${field.mappingType}, storeAttribute: ${field.storeAttribute})`);
+        }
+      });
+      
+      // 🐛 DEBUG: Log what we're setting in requestMapping
+      console.log('🐛 DEBUG: Setting requestMapping with', allFields.length, 'fields');
+      allFields.forEach((field, index) => {
+        if (field.category !== 'header') {
+          console.log(`🐛 Field ${index}: ${field.path} | storeAttribute: "${field.storeAttribute}" | category: ${field.category}`);
+        }
+      });
       
       setRequestMapping(allFields);
       setStep(2);
@@ -1259,42 +1305,98 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
     // Get template name for query parameter wrapping
     const templateName = templateData._id || 'TEMPLATE';
     
-    // Request template with input wrapper
-    const requestShiftSpec = {
-      input: {}
-    };
+    // DEBUG: Log all fields being processed
+    console.log('🐛 DEBUG: generateJoltSpecs called');
+    console.log('🐛 Template name:', templateName);
+    console.log('🐛 Request mapping fields:', requestMapping.length);
+    requestMapping.forEach((field, index) => {
+      console.log(`🐛 Field ${index}: ${field.path} | ${field.category} | ${field.mappingType} | ${field.storeAttribute}`);
+      
+      // 🚨 SPECIFIC CHECK for query parameters
+      if (field.category === 'query') {
+        console.log(`🔍 QUERY FIELD ANALYSIS:`, {
+          storeAttribute: field.storeAttribute,
+          mappingType: field.mappingType,
+          shouldBeInShift: field.mappingType === 'dynamic',
+          shouldBeInDefault: field.mappingType === 'static',
+          value: field.value,
+          staticValue: field.staticValue
+        });
+      }
+    });
+    
+    // Request template - start with direct mapping, will add input wrapper later if needed
+    const requestShiftSpec = {};
     const requestDefaultSpec = {};
 
-    // Process fields with special handling for query parameters
-    requestMapping.forEach(field => {
+    // � ENSURE QUERY PARAMETERS ARE DYNAMIC (for correct shift operation)
+    console.log('🔍 Processing requestMapping fields for JOLT generation:');
+    requestMapping.forEach((field, index) => {
+      if (field.category === 'query') {
+        console.log(`🔍 Query field ${index}: "${field.storeAttribute}" = "${field.value}" (mappingType: ${field.mappingType})`);
+      }
+    });
+    
+    // Process fields with correct JOLT mapping logic (respect user's static/dynamic choice)
+    requestMapping.forEach((field, index) => {
+      console.log(`🔍 Processing field ${index}:`, {
+        storeAttribute: field.storeAttribute,
+        category: field.category,
+        mappingType: field.mappingType,
+        path: field.path,
+        value: field.value
+      });
+      
       if (field.mappingType === 'dynamic' && field.storeAttribute) {
         if (field.category === 'query') {
-          // For query parameters, use template name wrapping: templateName.fieldName
-          const wrappedTarget = `${templateName}.${field.storeAttribute}`;
-          setNestedValue(requestShiftSpec.input, field.storeAttribute, wrappedTarget);
-          console.log(`✅ Query param (dynamic): input.${field.storeAttribute} → ${wrappedTarget}`);
+          // For query parameters: source is storeAttribute (user selection), target is Template.path (original param name)
+          const wrappedTarget = `${templateName}.${field.path || field.storeAttribute}`;
+          setNestedValue(requestShiftSpec, field.storeAttribute, wrappedTarget);
+          console.log(`✅ Query param (dynamic): ${field.storeAttribute} → ${wrappedTarget} (original param: ${field.path})`);
+        } else if (field.category === 'body' && field.isUrlencoded) {
+          // For --data-urlencode body fields, use template name wrapping
+          const wrappedTarget = `${templateName}.${field.path || field.storeAttribute}`;
+          setNestedValue(requestShiftSpec, field.storeAttribute, wrappedTarget);
+          console.log(`✅ Body field (--data-urlencode with template wrapping): ${field.storeAttribute} → ${wrappedTarget}`);
         } else {
-          // Regular dynamic fields (body, session variables, etc.)
+          // Regular dynamic fields (JSON body, nested body, session variables, etc.) - use input wrapper
+          console.log(`⚠️ Regular field "${field.storeAttribute}" using input wrapper (category="${field.category}", isUrlencoded=${field.isUrlencoded})`);
+          if (field.storeAttribute === 'PASSWORD') {
+            console.log(`🚨 FOUND PASSWORD FIELD! Details:`, field);
+          }
+          if (!requestShiftSpec.input) requestShiftSpec.input = {};
           setNestedValue(requestShiftSpec.input, field.storeAttribute, field.targetPath || field.path);
           console.log(`✅ Dynamic field: input.${field.storeAttribute} → ${field.targetPath || field.path}`);
         }
       } else if (field.mappingType === 'static' && field.category !== 'header') {
         if (field.category === 'query') {
-          // For static query parameters, add to default spec with template wrapping
-          const wrappedTarget = `${templateName}.${field.storeAttribute}`;
+          // For static query parameters, use original parameter name from URL
+          const wrappedTarget = `${templateName}.${field.path || field.storeAttribute}`;
           setNestedValue(requestDefaultSpec, wrappedTarget, field.staticValue || field.value);
-          console.log(`✅ Query param (static): ${wrappedTarget} = ${field.staticValue || field.value}`);
+          console.log(`✅ Query param (static): ${wrappedTarget} = ${field.staticValue || field.value} (original param: ${field.path})`);
+        } else if (field.category === 'body' && field.isUrlencoded) {
+          // For --data-urlencode body fields, use template name wrapping
+          const wrappedTarget = `${templateName}.${field.path || field.storeAttribute}`;
+          setNestedValue(requestDefaultSpec, wrappedTarget, field.staticValue || field.value);
+          console.log(`✅ Body field (--data-urlencode static with template wrapping): ${wrappedTarget} = ${field.staticValue || field.value}`);
         } else {
-          // Regular static fields (body fields)
+          // Regular static fields (JSON body fields) - use direct path
           setNestedValue(requestDefaultSpec, field.targetPath || field.path, field.staticValue || field.value);
-          console.log(`✅ Static field: ${field.targetPath || field.path} = ${field.staticValue || field.value}`);
+          console.log(`✅ Static field (JSON): ${field.targetPath || field.path} = ${field.staticValue || field.value}`);
         }
       } else if (field.mappingType === 'session' && field.category === 'query') {
-        // For session query parameters, map from session variable to template-wrapped target
+        // For session query parameters, map from session variable to template-wrapped target (using original param name)
+        if (field.storeAttribute) {
+          const wrappedTarget = `${templateName}.${field.path || field.storeAttribute}`;
+          setNestedValue(requestShiftSpec, field.storeAttribute, wrappedTarget);
+          console.log(`✅ Query param (session): ${field.storeAttribute} → ${wrappedTarget} (original param: ${field.path})`);
+        }
+      } else if (field.mappingType === 'session' && field.category === 'body' && field.path && !field.path.includes('.')) {
+        // For session body parameters, map from session variable to template-wrapped target
         if (field.storeAttribute) {
           const wrappedTarget = `${templateName}.${field.storeAttribute}`;
-          setNestedValue(requestShiftSpec.input, field.storeAttribute, wrappedTarget);
-          console.log(`✅ Query param (session): input.${field.storeAttribute} → ${wrappedTarget}`);
+          setNestedValue(requestShiftSpec, field.storeAttribute, wrappedTarget);
+          console.log(`✅ Body field (session with template wrapping): ${field.storeAttribute} → ${wrappedTarget}`);
         }
       }
     });
