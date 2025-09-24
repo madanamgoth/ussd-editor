@@ -505,10 +505,18 @@ export const exportToFlowFormat = (nodes, edges) => {
               }
             }
           } else if (nodeType === 'DYNAMIC-MENU') {
-            // For DYNAMIC-MENU nodes, always map to * for dynamic routing
-            cleanTransitions['*'] = edge.target;
-            if (metadata) {
-              nextNodeMetadata['*'] = metadata;
+            // For DYNAMIC-MENU nodes, handle simplified connections
+            if (sourceHandle === 'dynamic-output') {
+              // Main dynamic output - runtime routing handled by routing strategy
+              cleanTransitions['*'] = edge.target;
+              if (metadata) {
+                nextNodeMetadata['*'] = metadata;
+              }
+            } else if (sourceHandle === 'fallback') {
+              cleanTransitions['fallback'] = edge.target;
+              if (metadata) {
+                nextNodeMetadata['fallback'] = metadata;
+              }
             }
           } else if (nodeType === 'START') {
             // For START nodes, use configured USSD code or empty string like previous version
