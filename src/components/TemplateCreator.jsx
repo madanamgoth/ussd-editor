@@ -60,6 +60,7 @@ import {
   generateErrorJolt, 
   validateJoltSpec,
   autoDetectMapping,
+  enhanceJoltWithDefaults,
   hasNestedPath,
   setNestedValue 
 } from '../utils/JoltGeneratorEnhanced.js';
@@ -306,6 +307,8 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
       'items': 'items_menu', 
       'products': 'products_menu',
       'books': 'books_menu',
+      'fiction': 'fiction_menu',
+      'classics': 'classics_menu',
       'accounts': 'accounts_menu',
       'users': 'users_menu',
       'categories': 'categories_menu',
@@ -911,17 +914,21 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
         // Add non-array mappings from desired output
         Object.entries(desiredOutput).forEach(([sourcePath, targetPath]) => {
           if (sourcePath !== actualArrayName && typeof targetPath === 'string') {
-            shiftSpec.input[sourcePath] = targetPath;
+            // Use setNestedValue to create proper nested structure instead of flat dotted notation
+            setNestedValue(shiftSpec.input, sourcePath, targetPath);
+            console.log(`🔧 Dynamic menu - nested field mapping: "${sourcePath}" -> "${targetPath}"`);
           }
         });
         
-        // Add the array mapping for dynamic menu
-        shiftSpec.input[actualArrayName] = {
+        // Add the array mapping for dynamic menu using setNestedValue for proper nesting
+        const arrayMapping = {
           "*": {
             "@": `${sessionVarName}[]`,
             [displayKey]: `${sessionVarName.replace(/_items$/, '')}_menu_raw[]`
           }
         };
+        setNestedValue(shiftSpec.input, actualArrayName, arrayMapping);
+        console.log(`🔧 Dynamic menu - nested array mapping: "${actualArrayName}" -> array mapping`);
         
         result = [
           {
@@ -937,13 +944,20 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
             }
           }
         ];
-        console.log('🎯 Generated dynamic menu JOLT with configured mappings:', result);
+        
+        // Enhance the dynamic menu JOLT with missing defaults
+        result = enhanceJoltWithDefaults(result);
+        console.log('🎯 Generated and enhanced dynamic menu JOLT with all defaults:', result);
       } else {
         // Use standard JOLT generator for non-dynamic menu cases
         result = generateResponseJolt(rawResponse, enhancedDesiredOutput, {
           isDynamicMenuNext: isDynamicMenuNext,
           originalResponse: rawResponse
         });
+        
+        // Enhance the standard JOLT with missing defaults
+        result = enhanceJoltWithDefaults(result);
+        console.log('🎯 Generated and enhanced standard JOLT with all defaults:', result);
       }
       
       setResponseMapping(prev => ({
@@ -984,7 +998,11 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
       console.log('✅ Parsed Desired Error:', desiredError);
       
       // Use Enhanced JOLT Generator
-      const result = generateErrorJolt(rawError, desiredError);
+      let result = generateErrorJolt(rawError, desiredError);
+      
+      // Enhance the error JOLT with missing defaults
+      result = enhanceJoltWithDefaults(result);
+      console.log('🎯 Generated and enhanced error JOLT with all defaults:', result);
       
       setErrorMapping(prev => ({
         ...prev,
@@ -1274,11 +1292,15 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
       }
     ];
 
+    // Enhance JOLT specs with missing defaults for array and regular fields
+    const enhancedResponseJolt = enhanceJoltWithDefaults([...responseJolt]);
+    const enhancedErrorJolt = enhanceJoltWithDefaults([...errorJolt]);
+    
     setTemplateData(prev => ({
       ...prev,
       requestTemplate: { joltSpec: sessionAwareRequestJolt },
-      responseTemplate: { joltSpec: responseJolt },
-      responseErrorTemplate: { joltSpec: errorJolt }
+      responseTemplate: { joltSpec: enhancedResponseJolt },
+      responseErrorTemplate: { joltSpec: enhancedErrorJolt }
     }));
 
     setStep(4);
@@ -1562,6 +1584,10 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
     console.log(`✅ Response JOLT: Filtered ${rawResponseJolt.length - responseJolt.length} empty operations`);
     console.log(`✅ Error JOLT: Filtered ${rawErrorJolt.length - errorJolt.length} empty operations`);
 
+    // Enhance JOLT specs with missing defaults for array and regular fields
+    const enhancedResponseJolt = enhanceJoltWithDefaults([...responseJolt]);
+    const enhancedErrorJolt = enhanceJoltWithDefaults([...errorJolt]);
+    
     setTemplateData(prev => ({
       ...prev,
       requestTemplate: { 
@@ -1569,10 +1595,10 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
         queryformBodySpec: queryformBodySpec || "NA"
       },
       responseTemplate: { 
-        joltSpec: responseJolt,
+        joltSpec: enhancedResponseJolt,
         responseMapping: responseMapping // GRAPH METADATA: Saved for field extraction, NOT exported to NiFi
       },
-      responseErrorTemplate: { joltSpec: errorJolt }
+      responseErrorTemplate: { joltSpec: enhancedErrorJolt }
     }));
 
     setStep(4);
@@ -1590,12 +1616,14 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
       const templateId = templateData._id || 'TEMPLATE_ID';
       
       // Use the session variable name from array configuration
-      // This should match the session variable name from the template configuration
+      // Priority: customSessionName > sessionVariable > fallback extraction
       let menuArrayName;
-      if (selectedArrayConfig.sessionVariable) {
-        menuArrayName = selectedArrayConfig.sessionVariable;
-      } else if (selectedArrayConfig.customSessionName) {
+      if (selectedArrayConfig.customSessionName) {
         menuArrayName = selectedArrayConfig.customSessionName;
+        console.log('✅ Using customSessionName for sessionSpec:', menuArrayName);
+      } else if (selectedArrayConfig.sessionVariable) {
+        menuArrayName = selectedArrayConfig.sessionVariable;
+        console.log('✅ Using sessionVariable for sessionSpec:', menuArrayName);
       } else {
         // Fallback: try to extract from session variables in request mapping
         const sessionFields = requestMapping.filter(field => 
@@ -1615,13 +1643,20 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
         }
         
         if (!menuArrayName) {
-          // Ultimate fallback - this should rarely be used
-          menuArrayName = 'items_menu_book_items';
-          console.log('⚠️ Using hardcoded fallback array name:', menuArrayName);
+          // Ultimate fallback - use a generic name that matches the template pattern
+          menuArrayName = 'dynamic_menu_items';
+          console.log('⚠️ Using generic fallback array name:', menuArrayName);
         }
       }
       
       console.log('🔍 Using menuArrayName for sessionSpec:', menuArrayName);
+      console.log('🔍 selectedArrayConfig state:', JSON.stringify(selectedArrayConfig, null, 2));
+      console.log('🔍 Logic path taken:', {
+        hasCustomSessionName: !!selectedArrayConfig.customSessionName,
+        customSessionName: selectedArrayConfig.customSessionName,
+        hasSessionVariable: !!selectedArrayConfig.sessionVariable,
+        sessionVariable: selectedArrayConfig.sessionVariable
+      });
       
       // Generate menu JOLT transformation based on the pattern: {sessionVariable}_menu_raw
       let menuJoltKey;
@@ -1689,6 +1724,12 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
         }
       ];
       
+      console.log('🎯 Generated sessionSpec with dynamic menuArrayName:', {
+        menuArrayName,
+        templateId,
+        sessionSpec: JSON.stringify(sessionSpec, null, 2)
+      });
+      
       finalTemplateData = {
         ...finalTemplateData,
         templateId: templateId,
@@ -1716,129 +1757,15 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
 
   // Download template as file
   const handleDownload = () => {
-    // First, check if we need to generate session-aware JOLT
-    const hasSessionFields = requestMapping.some(field => 
-      field.mappingType === 'session' && field.storeAttribute && 
-      (field.storeAttribute.includes('selectedItem.') || field.storeAttribute.includes('_selectedItem.'))
-    );
+    console.log('🔍 Download: Using already generated template data with correct JOLT structure');
     
+    // Use the already-generated template data which has the correct nested JOLT structure
+    // This avoids regenerating JOLT and ensures consistency with what's displayed in the UI
     let finalTemplateData = { ...templateData };
     
-    if (hasSessionFields) {
-      console.log('🔍 Download: Detected session fields, ensuring proper JOLT generation...');
-      
-      // Make sure the template data has the correct session-aware JOLT
-      // This should match the logic from generateSessionAwareJoltSpecs
-      const sessionAwareRequestJolt = [];
-      
-      // Extract menu array name from session variables
-      let menuArrayName = null;
-      const sessionFieldsArray = requestMapping.filter(field => 
-        field.mappingType === 'session' && field.storeAttribute && 
-        (field.storeAttribute.includes('selectedItem.') || field.storeAttribute.includes('_selectedItem.'))
-      );
-      
-      if (sessionFieldsArray.length > 0) {
-        const firstSessionVar = sessionFieldsArray[0].storeAttribute;
-        console.log('🎯 Download: Found session variable:', firstSessionVar);
-        
-        // Get template name directly from availableVariablesByTemplate
-        if (availableVariablesByTemplate && Object.keys(availableVariablesByTemplate).length > 0) {
-          for (const [templateName, variables] of Object.entries(availableVariablesByTemplate)) {
-            if (variables.includes(firstSessionVar)) {
-              menuArrayName = templateName;
-              console.log('✅ Download: Found session variable belongs to template:', templateName);
-              break;
-            }
-          }
-        }
-        
-        // Fallback: extract from pattern if template lookup failed
-        if (!menuArrayName && firstSessionVar.includes('_selectedItem.')) {
-          const parts = firstSessionVar.split('_selectedItem.');
-          if (parts.length >= 2) {
-            menuArrayName = parts[0];
-            console.log('✅ Download: Fallback extracted array name:', menuArrayName);
-          }
-        }
-      }
-      
-      if (menuArrayName) {
-        console.log('✅ Download: Using previous template name:', menuArrayName);
-        
-        // Generate the traditional two-shift JOLT pattern (not modify-overwrite-beta)
-        // Step 1: First shift to map input and session data
-        const requestShiftSpec = { input: {} };
-        
-        // Map dynamic fields
-        requestMapping.forEach(field => {
-          if (field.mappingType === 'dynamic' && field.storeAttribute) {
-            setNestedValue(requestShiftSpec.input, field.storeAttribute, field.targetPath || field.path);
-            console.log(`✅ Download: Mapped dynamic field: ${field.storeAttribute} → ${field.targetPath || field.path}`);
-          }
-        });
-        
-        // Map the session array using the previous template name
-        setNestedValue(requestShiftSpec.input, `${menuArrayName}.USERINDEX`, 'selectedItem');
-        console.log(`✅ Download: Mapped session array: ${menuArrayName}.USERINDEX → selectedItem`);
-        
-        sessionAwareRequestJolt.push({
-          operation: "shift",
-          spec: requestShiftSpec
-        });
-        
-        // Step 2: Second shift to map selectedItem fields
-        const selectedItemShiftSpec = {};
-        
-        requestMapping.forEach(field => {
-          if (field.mappingType === 'session' && field.storeAttribute && 
-              field.storeAttribute.includes('selectedItem.')) {
-            const parts = field.storeAttribute.split('selectedItem.');
-            if (parts.length >= 2) {
-              const fieldName = parts[1]; // e.g., 'title', 'author'
-              const targetPath = field.targetPath || field.path;
-              setNestedValue(selectedItemShiftSpec, `selectedItem.${fieldName}`, targetPath);
-              console.log(`✅ Download: Mapped selectedItem field: selectedItem.${fieldName} → ${targetPath}`);
-            }
-          }
-        });
-        
-        // Add other non-dynamic, non-session fields to the shift
-        requestMapping.forEach(field => {
-          if (field.mappingType !== 'dynamic' && field.mappingType !== 'session' && 
-              field.mappingType !== 'static') {
-            // Handle other mapping types if needed
-          }
-        });
-        
-        sessionAwareRequestJolt.push({
-          operation: "shift",
-          spec: selectedItemShiftSpec
-        });
-        
-        // Step 3: Default values for static fields
-        const requestDefaultSpec = {};
-        requestMapping.forEach(field => {
-          if (field.mappingType === 'static' && field.category !== 'header') {
-            setNestedValue(requestDefaultSpec, field.targetPath || field.path, field.staticValue || field.value);
-            console.log(`✅ Download: Mapped static field: ${field.targetPath || field.path} = ${field.staticValue || field.value}`);
-          }
-        });
-        
-        sessionAwareRequestJolt.push({
-          operation: "default",
-          spec: requestDefaultSpec
-        });
-        
-        // Update the template data with corrected JOLT
-        finalTemplateData = {
-          ...finalTemplateData,
-          requestTemplate: { joltSpec: sessionAwareRequestJolt }
-        };
-        
-        console.log('✅ Download: Generated session-aware JOLT:', sessionAwareRequestJolt);
-      }
-    }
+    // The template data already contains the correctly generated JOLT with proper nested structure
+    // No need to regenerate - just use what's already been generated and displayed
+    console.log('✅ Download: Using existing template data with correct nested JOLT structure');
     
     const result = downloadTemplate(finalTemplateData);
     if (result.success) {
@@ -1860,9 +1787,18 @@ const TemplateCreator = ({ onClose, onCreate, availableVariables = [], available
         try {
           const result = await loadTemplateFromFile(file);
           if (result.success) {
-            setTemplateData(result.template);
+            // Enhance imported template JOLT specs with missing defaults
+            const template = { ...result.template };
+            if (template.responseTemplate && template.responseTemplate.joltSpec) {
+              template.responseTemplate.joltSpec = enhanceJoltWithDefaults([...template.responseTemplate.joltSpec]);
+            }
+            if (template.responseErrorTemplate && template.responseErrorTemplate.joltSpec) {
+              template.responseErrorTemplate.joltSpec = enhanceJoltWithDefaults([...template.responseErrorTemplate.joltSpec]);
+            }
+            
+            setTemplateData(template);
             setStep(4); // Go to review step
-            console.log('✅ Template imported:', result.message);
+            console.log('✅ Template imported and enhanced with defaults:', result.message);
           }
         } catch (error) {
           console.error('❌ Import failed:', error.message);
@@ -2776,15 +2712,19 @@ curl -X PUT 'http://api.example.com/endpoint' \\
                         const preview = {
                           detectedArrays: arrays,
                           totalArrays: arrays.length,
-                          recommendations: arrays.map(arr => ({
-                            path: arr.path,
-                            type: arr.type,
-                            suggested: {
-                              sessionVariable: generateSmartSessionName(arr.path),
-                              displayKey: arr.type === 'objects' ? arr.sampleKeys[1] || arr.sampleKeys[0] : null,
-                              valueKey: arr.type === 'objects' ? arr.sampleKeys[0] : 'index'
-                            }
-                          }))
+                          recommendations: arrays.map(arr => {
+                            const sessionVar = generateSmartSessionName(arr.path);
+                            console.log(`🎯 Array path: "${arr.path}" -> sessionVariable: "${sessionVar}"`);
+                            return {
+                              path: arr.path,
+                              type: arr.type,
+                              suggested: {
+                                sessionVariable: sessionVar,
+                                displayKey: arr.type === 'objects' ? arr.sampleKeys[1] || arr.sampleKeys[0] : null,
+                                valueKey: arr.type === 'objects' ? arr.sampleKeys[0] : 'index'
+                              }
+                            };
+                          })
                         };
                         setArrayPreview(preview);
                       } else {
@@ -2827,6 +2767,7 @@ curl -X PUT 'http://api.example.com/endpoint' \\
                                   const selectedIndex = parseInt(e.target.value);
                                   const selectedRec = arrayPreview.recommendations && arrayPreview.recommendations[selectedIndex];
                                   if (selectedRec) {
+                                    console.log(`🔄 Array selected: Index ${selectedIndex}, Path: "${selectedRec.path}", SessionVar: "${selectedRec.suggested.sessionVariable}"`);
                                     setSelectedArrayConfig({
                                       selectedArray: selectedIndex,
                                       displayKey: selectedRec.suggested.displayKey || '',

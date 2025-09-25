@@ -24,12 +24,80 @@ export const generateResponseJolt = (rawResponse, desiredMapping, options = {}) 
     };
     
     // Parse the desired mapping and create shift operations
+    // Convert flat dot-notation mappings to proper nested JOLT structure
+    // All mappings should be wrapped under "input"
+    const processedMappings = {
+      input: {}
+    };
+
     Object.entries(desiredMapping).forEach(([sourcePath, targetPath]) => {
-      // Skip dynamicMenuData for now - we'll handle it specially
+      // Skip dynamicMenuData for now - we'll handle it specially  
       if (targetPath !== 'dynamicMenuData' && typeof targetPath === 'string') {
-        setNestedValue(shiftSpec.spec, sourcePath, targetPath);
+        console.log(`🔧 Processing mapping: "${sourcePath}" -> "${targetPath}"`);
+        
+        // Handle different types of field mappings
+        if (sourcePath.includes('.*')) {
+          // This handles both "path.*" and "path.*.property" patterns
+          const wildcardIndex = sourcePath.indexOf('.*');
+          const beforeWildcard = sourcePath.substring(0, wildcardIndex);
+          const afterWildcard = sourcePath.substring(wildcardIndex + 2); // Skip ".*"
+          
+          console.log(`🔧 Array mapping detected: beforeWildcard="${beforeWildcard}", afterWildcard="${afterWildcard}"`);
+          
+          // Build the proper nested structure for array mappings
+          if (afterWildcard) {
+            // Pattern like "userInformation.basicInformation.loginIdentifiers.*.value"
+            const propertyPath = afterWildcard.startsWith('.') ? afterWildcard.substring(1) : afterWildcard;
+            
+            // Navigate to the array container first
+            let arrayContainer = processedMappings.input;
+            if (beforeWildcard) {
+              const beforeParts = beforeWildcard.split('.');
+              for (const part of beforeParts) {
+                if (!arrayContainer[part]) {
+                  arrayContainer[part] = {};
+                }
+                arrayContainer = arrayContainer[part];
+              }
+            }
+            
+            // Set up the wildcard mapping for the property
+            if (!arrayContainer['*']) {
+              arrayContainer['*'] = {};
+            }
+            arrayContainer['*'][propertyPath] = targetPath;
+            
+          } else {
+            // Pattern like "userInformation.basicInformation.loginIdentifiers.*" - map entire array element using @
+            let arrayContainer = processedMappings.input;
+            if (beforeWildcard) {
+              const beforeParts = beforeWildcard.split('.');
+              for (const part of beforeParts) {
+                if (!arrayContainer[part]) {
+                  arrayContainer[part] = {};
+                }
+                arrayContainer = arrayContainer[part];
+              }
+            }
+            
+            // Set up the wildcard mapping for the entire element
+            if (!arrayContainer['*']) {
+              arrayContainer['*'] = {};
+            }
+            arrayContainer['*']['@'] = targetPath;
+          }
+        } else {
+          // Regular field mapping without wildcards - use setNestedValue to ensure proper nesting
+          console.log(`🔧 Regular field mapping: "${sourcePath}" -> "${targetPath}"`);
+          console.log(`🔧 BEFORE setNestedValue - processedMappings.input:`, JSON.stringify(processedMappings.input, null, 2));
+          setNestedValue(processedMappings.input, sourcePath, targetPath);
+          console.log(`🔧 AFTER setNestedValue - processedMappings.input:`, JSON.stringify(processedMappings.input, null, 2));
+        }
       }
-    });
+    });    // Apply the processed mappings to the shift spec
+    shiftSpec.spec = processedMappings;
+    console.log('🎯 Processed nested JOLT mappings:', JSON.stringify(processedMappings, null, 2));
+    console.log('🎯 Final shiftSpec.spec:', JSON.stringify(shiftSpec.spec, null, 2));
     
     // Handle dynamic menu data if present
     if (desiredMapping.dynamicMenuData) {
@@ -184,6 +252,52 @@ export const generateResponseJolt = (rawResponse, desiredMapping, options = {}) 
       }
     }
     
+    // Extract all target paths from shift spec and add them to default with appropriate values
+    const extractTargetPaths = (spec, paths = []) => {
+      Object.entries(spec).forEach(([key, value]) => {
+        if (typeof value === 'string') {
+          // This is a target path
+          paths.push({
+            path: value,
+            isArray: value.endsWith('[]'),
+            cleanPath: value.replace(/\[\]$/, '') // Remove [] suffix for clean path
+          });
+        } else if (typeof value === 'object' && value !== null) {
+          // Recursively extract from nested objects
+          extractTargetPaths(value, paths);
+        }
+      });
+      return paths;
+    };
+    
+    // Get all target paths from shift operation
+    const targetPaths = extractTargetPaths(shiftSpec.spec);
+    
+    // Sort paths by depth (deeper paths first) to avoid conflicts
+    const sortedPaths = targetPaths.sort((a, b) => {
+      const depthA = (a.cleanPath || a.path).split('.').length;
+      const depthB = (b.cleanPath || b.path).split('.').length;
+      return depthB - depthA; // Deeper paths first
+    });
+    
+    // Add all shift target paths to default spec with appropriate values
+    sortedPaths.forEach(pathInfo => {
+      try {
+        if (pathInfo.isArray) {
+          // Array fields get default array with error message
+          setNestedValue(defaultSpec, pathInfo.cleanPath, ["unable to fetch"]);
+        } else {
+          // Regular fields get "0" as default, but only if the path doesn't already exist
+          const existingValue = getNestedValue(defaultSpec, pathInfo.path);
+          if (existingValue === undefined) {
+            setNestedValue(defaultSpec, pathInfo.path, "0");
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ Could not set default for path ${pathInfo.path}:`, error.message);
+      }
+    });
+    
     // Add default operation
     joltSpec.push({
       operation: "default",
@@ -218,6 +332,62 @@ export const generateErrorJolt = (rawError, desiredMapping) => {
       setNestedValue(shiftSpec.spec, sourcePath, targetPath);
     });
     
+    // Extract all target paths from shift spec and add them to default with appropriate values
+    const extractTargetPaths = (spec, paths = []) => {
+      Object.entries(spec).forEach(([key, value]) => {
+        if (typeof value === 'string') {
+          // This is a target path
+          paths.push({
+            path: value,
+            isArray: value.endsWith('[]'),
+            cleanPath: value.replace(/\[\]$/, '') // Remove [] suffix for clean path
+          });
+        } else if (typeof value === 'object' && value !== null) {
+          // Recursively extract from nested objects
+          extractTargetPaths(value, paths);
+        }
+      });
+      return paths;
+    };
+    
+    // Get all target paths from shift operation
+    const targetPaths = extractTargetPaths(shiftSpec.spec);
+    
+    // Create default spec with standard error fields
+    const defaultSpec = {
+      success: false,
+      error: true,
+      timestamp: new Date().toISOString(),
+      status: "FAILED",
+      errorCode: "UNKNOWN_ERROR",
+      errorMessage: "An error occurred"
+    };
+    
+    // Sort paths by depth (deeper paths first) to avoid conflicts
+    const sortedPaths = targetPaths.sort((a, b) => {
+      const depthA = (a.cleanPath || a.path).split('.').length;
+      const depthB = (b.cleanPath || b.path).split('.').length;
+      return depthB - depthA; // Deeper paths first
+    });
+    
+    // Add all shift target paths to default spec with appropriate values
+    sortedPaths.forEach(pathInfo => {
+      try {
+        if (pathInfo.isArray) {
+          // Array fields get default array with error message
+          setNestedValue(defaultSpec, pathInfo.cleanPath, ["unable to fetch"]);
+        } else {
+          // Regular fields get "0" as default, but only if the path doesn't already exist
+          const existingValue = getNestedValue(defaultSpec, pathInfo.path);
+          if (existingValue === undefined) {
+            setNestedValue(defaultSpec, pathInfo.path, "0");
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ Could not set default for path ${pathInfo.path}:`, error.message);
+      }
+    });
+    
     const joltSpec = [
       {
         operation: "shift",
@@ -225,14 +395,7 @@ export const generateErrorJolt = (rawError, desiredMapping) => {
       },
       {
         operation: "default",
-        spec: {
-          success: false,
-          error: true,
-          timestamp: new Date().toISOString(),
-          status: "FAILED",
-          errorCode: "UNKNOWN_ERROR",
-          errorMessage: "An error occurred"
-        }
+        spec: defaultSpec
       }
     ];
     
@@ -373,6 +536,12 @@ export const setNestedValue = (obj, path, value) => {
       }
       
       current = current[arrayName][index];
+    } else if (part === '*') {
+      // Handle JOLT wildcard - create the * object if it doesn't exist
+      if (!current['*']) {
+        current['*'] = {};
+      }
+      current = current['*'];
     } else {
       // Regular object property
       if (!current[part]) {
@@ -382,7 +551,7 @@ export const setNestedValue = (obj, path, value) => {
     }
   }
   
-  // Handle the final part (could also have array notation)
+  // Handle the final part (could also have array notation or wildcard)
   const finalPart = parts[parts.length - 1];
   const finalArrayMatch = finalPart.match(/^(.+)\[(\d+)\]$/);
   
@@ -401,6 +570,18 @@ export const setNestedValue = (obj, path, value) => {
     }
     
     current[arrayName][index] = value;
+  } else if (finalPart === '*') {
+    // Handle final wildcard - this means we're setting the wildcard mapping itself
+    if (typeof value === 'object' && value !== null) {
+      // If value is an object, merge it with existing '*' object
+      if (!current['*']) {
+        current['*'] = {};
+      }
+      Object.assign(current['*'], value);
+    } else {
+      // Direct assignment to wildcard
+      current['*'] = value;
+    }
   } else {
     // Regular property assignment
     current[finalPart] = value;
@@ -498,11 +679,197 @@ const performShift = (shiftSpec, inputData) => {
   return result;
 };
 
+/**
+ * Enhance an existing JOLT spec by adding missing default values for array and regular fields
+ * @param {Array} existingJoltSpec - Existing JOLT specification
+ * @returns {Array} Enhanced JOLT specification with proper defaults
+ */
+export const enhanceJoltWithDefaults = (existingJoltSpec) => {
+  try {
+    console.log('🔧 Enhancing existing JOLT with defaults:', existingJoltSpec);
+    
+    // Find the shift operation
+    const shiftOperation = existingJoltSpec.find(op => op.operation === 'shift');
+    if (!shiftOperation) {
+      console.warn('⚠️ No shift operation found in JOLT spec');
+      return existingJoltSpec;
+    }
+    
+    // Extract all target paths from the shift spec
+    const extractTargetPaths = (spec, paths = []) => {
+      Object.entries(spec).forEach(([key, value]) => {
+        if (typeof value === 'string') {
+          // This is a target path
+          paths.push({
+            path: value,
+            isArray: value.endsWith('[]'),
+            cleanPath: value.replace(/\[\]$/, '') // Remove [] suffix for clean path
+          });
+        } else if (typeof value === 'object' && value !== null) {
+          // Recursively extract from nested objects
+          extractTargetPaths(value, paths);
+        }
+      });
+      return paths;
+    };
+    
+    const targetPaths = extractTargetPaths(shiftOperation.spec);
+    console.log('🎯 Extracted target paths:', targetPaths);
+    
+    // Find or create the default operation
+    let defaultOperation = existingJoltSpec.find(op => op.operation === 'default');
+    if (!defaultOperation) {
+      defaultOperation = {
+        operation: 'default',
+        spec: {}
+      };
+      existingJoltSpec.push(defaultOperation);
+    }
+    
+    // Ensure basic default fields exist
+    if (defaultOperation.spec.success === undefined) {
+      defaultOperation.spec.success = true;
+    }
+    if (!defaultOperation.spec.timestamp) {
+      defaultOperation.spec.timestamp = new Date().toISOString();
+    }
+    if (!defaultOperation.spec.status) {
+      defaultOperation.spec.status = "SUCCEEDED";
+    }
+    
+    // Sort paths by depth (deeper paths first) to avoid conflicts
+    const sortedPaths = targetPaths.sort((a, b) => {
+      const depthA = (a.cleanPath || a.path).split('.').length;
+      const depthB = (b.cleanPath || b.path).split('.').length;
+      return depthB - depthA; // Deeper paths first
+    });
+    
+    // Add missing defaults for target paths
+    sortedPaths.forEach(pathInfo => {
+      try {
+        if (pathInfo.isArray) {
+          // Array fields get default array with error message
+          const existingValue = getNestedValue(defaultOperation.spec, pathInfo.cleanPath);
+          if (existingValue === undefined) {
+            setNestedValue(defaultOperation.spec, pathInfo.cleanPath, ["unable to fetch"]);
+            console.log(`✅ Added array default for: ${pathInfo.cleanPath}`);
+          }
+        } else {
+          // Regular fields get "0" as default, but only if the path doesn't already exist
+          const existingValue = getNestedValue(defaultOperation.spec, pathInfo.path);
+          if (existingValue === undefined) {
+            setNestedValue(defaultOperation.spec, pathInfo.path, "0");
+            console.log(`✅ Added regular default for: ${pathInfo.path}`);
+          }
+        }
+      } catch (error) {
+        console.warn(`⚠️ Could not set default for path ${pathInfo.path}:`, error.message);
+      }
+    });
+    
+    console.log('✅ Enhanced JOLT with defaults:', existingJoltSpec);
+    return existingJoltSpec;
+    
+  } catch (error) {
+    console.error('❌ Error enhancing JOLT with defaults:', error);
+    return existingJoltSpec; // Return original on error
+  }
+};
+
+/**
+ * Perform JOLT transformation using JOLT-JS library simulation
+ * @param {Array} joltSpec - JOLT specification array
+ * @param {Object} input - Input data to transform
+ * @returns {Object} Transformed data
+ */
+export const performJoltTransformation = (joltSpec, input) => {
+  try {
+    let result = JSON.parse(JSON.stringify(input)); // Deep clone
+    
+    joltSpec.forEach(operation => {
+      if (operation.operation === 'shift') {
+        result = applyShiftTransformation(result, operation.spec);
+      } else if (operation.operation === 'default') {
+        result = applyDefaultTransformation(result, operation.spec);
+      }
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('❌ Error performing JOLT transformation:', error);
+    throw error;
+  }
+};
+
+// Helper function to apply shift transformation
+const applyShiftTransformation = (input, shiftSpec) => {
+  const result = {};
+  
+  const processShift = (data, spec, currentResult) => {
+    Object.entries(spec).forEach(([key, value]) => {
+      if (key === '*') {
+        // Handle array wildcard
+        if (Array.isArray(data)) {
+          data.forEach(item => {
+            if (typeof value === 'object' && value !== null) {
+              processShift(item, value, currentResult);
+            }
+          });
+        }
+      } else if (data && typeof data === 'object' && key in data) {
+        if (typeof value === 'string') {
+          // Direct mapping
+          setNestedValue(currentResult, value, data[key]);
+        } else if (typeof value === 'object' && value !== null) {
+          if (value['@']) {
+            // Special @ mapping for whole object
+            setNestedValue(currentResult, value['@'], data[key]);
+          }
+          // Recursively process nested mappings
+          Object.entries(value).forEach(([subKey, subValue]) => {
+            if (subKey !== '@' && data[key] && typeof data[key] === 'object') {
+              if (subKey === '*' && Array.isArray(data[key])) {
+                data[key].forEach(item => {
+                  if (typeof subValue === 'object') {
+                    processShift(item, subValue, currentResult);
+                  }
+                });
+              } else if (subKey in data[key]) {
+                if (typeof subValue === 'string') {
+                  setNestedValue(currentResult, subValue, data[key][subKey]);
+                }
+              }
+            }
+          });
+        }
+      }
+    });
+  };
+  
+  processShift(input, shiftSpec, result);
+  return result;
+};
+
+// Helper function to apply default transformation
+const applyDefaultTransformation = (input, defaultSpec) => {
+  const result = { ...input };
+  
+  Object.entries(defaultSpec).forEach(([key, value]) => {
+    if (!(key in result)) {
+      result[key] = value;
+    }
+  });
+  
+  return result;
+};
+
 export default {
   generateResponseJolt,
   generateErrorJolt,
   validateJoltSpec,
   autoDetectMapping,
+  enhanceJoltWithDefaults,
+  performJoltTransformation,
   hasNestedPath,
   setNestedValue,
   getNestedValue

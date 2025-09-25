@@ -772,7 +772,32 @@ export const exportToFlowFormat = (nodes, edges) => {
           .replace(/^[0-9]/, '_$&') // Prefix with _ if starts with number
           || 'DefaultTemplate'; // Final fallback
         
-        // Dynamic menu sessionSpec with dynamic template name
+        // Extract session variable name from menuName or use fallback
+        let sessionVariableName = 'dynamic_menu_items'; // Fallback
+        
+        if (config.menuName && config.menuName.trim() !== '') {
+          // menuName format is usually: "session_variable_menu_raw"
+          // Extract the base session variable name by removing _menu_raw suffix
+          const menuName = config.menuName.trim();
+          if (menuName.endsWith('_menu_raw')) {
+            sessionVariableName = menuName.replace(/_menu_raw$/, '');
+          } else if (menuName.endsWith('_raw')) {
+            sessionVariableName = menuName.replace(/_raw$/, '');
+          } else {
+            // If menuName doesn't follow expected pattern, try to extract meaningful part
+            const parts = menuName.split('_');
+            if (parts.length >= 2) {
+              // Take first two parts as base name (e.g., "classics_menu" from "classics_menu_something")
+              sessionVariableName = parts.slice(0, 2).join('_');
+            } else {
+              sessionVariableName = menuName;
+            }
+          }
+        }
+        
+        console.log(`🔧 Export: Using dynamic session variable "${sessionVariableName}" for template "${cleanTemplateName}"`);
+        
+        // Dynamic menu sessionSpec with dynamic session variable name
         cleanNode.sessionSpec = JSON.stringify([
           {
             "operation": "shift",
@@ -786,7 +811,7 @@ export const exportToFlowFormat = (nodes, edges) => {
             "operation": "shift", 
             "spec": {
               "*": "&",
-              "fiction_menu": {
+              [sessionVariableName]: {
                 "*": {
                   "@": `${cleanTemplateName}.&`
                 }
@@ -802,7 +827,7 @@ export const exportToFlowFormat = (nodes, edges) => {
           {
             "operation": "remove",
             "spec": {
-              "fiction_menu": ""
+              [sessionVariableName]: ""
             }
           }
         ]);
