@@ -408,6 +408,7 @@ FROM FLOWFILE`;
       setConfig({
         id: selectedNode.id,
         name: selectedNode.data.label || '',
+        compositCode: selectedNode.data.config?.compositCode || '', // Add composite code field
         prompts: selectedNode.data.config?.prompts || {
           en: '',
           es: '',
@@ -478,6 +479,7 @@ FROM FLOWFILE`;
       } else if (selectedNode.data.type === 'MENU') {
         updatedConfig.transitions = config.menuConnections;
         updatedConfig.fallback = config.fallback;
+        updatedConfig.compositCode = config.compositCode; // Add composite code for MENU
       } else if (selectedNode.data.type === 'DYNAMIC-MENU') {
         updatedConfig.transitions = config.menuConnections;
         updatedConfig.fallback = config.fallback;
@@ -577,6 +579,8 @@ FROM FLOWFILE`;
         }
       } else if (selectedNode.data.type === 'START') {
         updatedConfig.ussdCode = config.ussdCode;
+      } else if (selectedNode.data.type === 'END') {
+        updatedConfig.compositCode = config.compositCode; // Add composite code for END
       }
 
       onUpdateNode(selectedNode.id, {
@@ -1402,6 +1406,19 @@ FROM FLOWFILE`;
         {selectedNode.data.type === 'MENU' && (
           <>
             <div className="config-section">
+              <label>Composite Code:</label>
+              <input
+                type="text"
+                value={config.compositCode || ''}
+                onChange={(e) => setConfig(prev => ({ ...prev, compositCode: e.target.value }))}
+                placeholder="Enter composite code (e.g., 7634)"
+              />
+              <small className="config-hint">
+                Unique identifier for this MENU node
+              </small>
+            </div>
+            
+            <div className="config-section">
               <label>Menu Options & Connections:</label>
               <div className="menu-connections">
                 {Object.keys(config.menuConnections).map(option => (
@@ -1443,6 +1460,19 @@ FROM FLOWFILE`;
 
         {selectedNode.data.type === 'END' && (
           <>
+            <div className="config-section">
+              <label>Composite Code:</label>
+              <input
+                type="text"
+                value={config.compositCode || ''}
+                onChange={(e) => setConfig(prev => ({ ...prev, compositCode: e.target.value }))}
+                placeholder="Enter composite code (e.g., 7633)"
+              />
+              <small className="config-hint">
+                Unique identifier for this END node
+              </small>
+            </div>
+            
             <div className="config-section">
               <label>End Message Configuration:</label>
               <div className="info-box">

@@ -19,6 +19,19 @@ const EndNode = ({ data, isConnectable, selected }) => {
         <div className="node-title truncate-text">
           {data.label || 'End'}
         </div>
+        {data.config?.compositCode && (
+          <div className="composite-code" style={{
+            fontSize: '0.7rem',
+            fontWeight: 'bold',
+            color: '#374151',
+            backgroundColor: '#f3f4f6',
+            padding: '2px 6px',
+            borderRadius: '3px',
+            marginTop: '2px'
+          }}>
+            {data.config.compositCode}
+          </div>
+        )}
         <div className="node-type">END</div>
       </div>
       

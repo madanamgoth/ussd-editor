@@ -607,6 +607,11 @@ export const exportToFlowFormat = (nodes, edges) => {
       transitions: cleanTransitions
     };
 
+    // Add compositeCode for MENU and END nodes
+    if ((nodeType === 'MENU' || nodeType === 'END') && config.compositCode && config.compositCode.trim() !== '') {
+      cleanNode.compositCode = config.compositCode;
+    }
+
     // Add next node metadata based on node type and expected format
     const transitionKeys = Object.keys(cleanTransitions);
     
@@ -898,6 +903,11 @@ export const importFromFlowFormat = (flowData) => {
     node.data.config.prompts = flowNode.prompts;
     node.data.config.transitions = flowNode.transitions;
     node.data.config.fallback = flowNode.fallback;
+    
+    // Import compositeCode for MENU and END nodes
+    if (flowNode.compositCode) {
+      node.data.config.compositCode = flowNode.compositCode;
+    }
     
     if (flowNode.storeAttribute) {
       node.data.config.storeAttribute = flowNode.storeAttribute;
