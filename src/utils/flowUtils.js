@@ -854,20 +854,40 @@ export const exportToFlowFormat = (nodes, edges) => {
       let queryformBodySpec = config.queryformBodySpec;
       
       // If not in config, extract from template data
-      if (!queryformBodySpec || queryformBodySpec === "NA") {
+      if (!queryformBodySpec || queryformBodySpec === "NA" || queryformBodySpec === '"NA"') {
         if (config.templates && config.templates.length > 0) {
           const firstTemplate = config.templates[0];
           if (firstTemplate.requestTemplate?.queryformBodySpec) {
-            queryformBodySpec = JSON.stringify(firstTemplate.requestTemplate.queryformBodySpec);
+            queryformBodySpec = firstTemplate.requestTemplate.queryformBodySpec;
           } else if (firstTemplate.queryformBodySpec) {
             queryformBodySpec = firstTemplate.queryformBodySpec;
           }
         }
       }
       
-      if (queryformBodySpec && queryformBodySpec !== "NA") {
-        cleanNode.queryformBodySpec = queryformBodySpec;
+      // Handle the queryformBodySpec value properly
+      if (queryformBodySpec && queryformBodySpec !== "NA" && queryformBodySpec !== '"NA"') {
+        // If it's already a JSON string (starts and ends with quotes), parse it first
+        if (typeof queryformBodySpec === 'string' && queryformBodySpec.startsWith('"') && queryformBodySpec.endsWith('"')) {
+          try {
+            queryformBodySpec = JSON.parse(queryformBodySpec);
+          } catch (e) {
+            // If parsing fails, use as-is but remove the quotes
+            queryformBodySpec = queryformBodySpec.slice(1, -1);
+          }
+        }
+        
+        // Now set the final value - only add if it's not default/empty
+        if (typeof queryformBodySpec === 'object') {
+          cleanNode.queryformBodySpec = JSON.stringify(queryformBodySpec);
+        } else if (typeof queryformBodySpec === 'string' && queryformBodySpec.trim() !== '' && queryformBodySpec !== 'NA') {
+          cleanNode.queryformBodySpec = queryformBodySpec;
+        } else {
+          // Only set NA as default when there's truly no content
+          cleanNode.queryformBodySpec = "NA";
+        }
       } else {
+        // Only set NA as default when there's truly no content
         cleanNode.queryformBodySpec = "NA";
       }
       
