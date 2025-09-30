@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import TemplateCreator from './TemplateCreator';
 import './EndNodeConfigStyles.css';
+import alasql from 'alasql';
 
 const NodeConfigPanel = ({ selectedNode, onUpdateNode, onClose, allNodes = [] }) => {
   
@@ -127,6 +128,22 @@ FROM FLOWFILE`;
 
   const [showTemplateCreator, setShowTemplateCreator] = useState(false);
   const [showFullScreenConfig, setShowFullScreenConfig] = useState(false);
+  
+  // Query testing state
+  const [testData, setTestData] = useState(`{
+  "httpCode": 200,
+  "userStatus": "SUB",
+  "userId": "3982048023",
+  "userName": "John Doe",
+  "phoneNumber": "1234567890123",
+  "amount1": "100",
+  "amount2": "50",
+  "userType": "PREMIUM",
+  "errorType": "VALIDATION",
+  "fetchquery": "menu1"
+}`);
+  const [testQuery, setTestQuery] = useState('SELECT fetchquery FROM FLOWFILE WHERE httpCode = 200 AND userStatus=\'SUB\'');
+  const [testResult, setTestResult] = useState(null);
 
   // Get available variables from INPUT nodes in the flow
   const getAvailableVariables = () => {
@@ -288,6 +305,81 @@ FROM FLOWFILE`;
     console.log('Variables grouped by template:', variablesByTemplate);
     return { variables, variablesByTemplate };
   };
+
+  // Apache Calcite SQL query testing using alasql
+  const handleTestQuery = () => {
+    try {
+      // Parse the test data
+      let flowfileData;
+      try {
+        flowfileData = JSON.parse(testData);
+      } catch (e) {
+        setTestResult({
+          success: false,
+          error: 'Invalid JSON data. Please check your test data format.'
+        });
+        return;
+      }
+
+      // Validate query structure
+      const query = testQuery.trim();
+      if (!query.toUpperCase().includes('SELECT') || !query.toUpperCase().includes('FROM FLOWFILE')) {
+        setTestResult({
+          success: false,
+          error: 'Query must contain SELECT ... FROM FLOWFILE'
+        });
+        return;
+      }
+
+      // Use the query as-is - Apache NiFi expects standard SQL syntax
+      let alasqlQuery = query;
+
+      // Use default database and clean up any existing FLOWFILE table
+      try {
+        alasql('DROP TABLE IF EXISTS FLOWFILE');
+      } catch (e) {
+        // Ignore if table doesn't exist
+      }
+      
+      // Create FLOWFILE table and insert the test data
+      const flowfileArray = [flowfileData];
+      alasql('CREATE TABLE FLOWFILE');
+      alasql.tables.FLOWFILE.data = flowfileArray;
+
+      // Execute the query using alasql
+      let result;
+      
+      try {
+        console.log('Executing SQL:', alasqlQuery);
+        
+        result = alasql(alasqlQuery);
+        
+        setTestResult({
+          success: true,
+          result: result.length > 0 ? result[0] : {},
+          query: alasqlQuery,
+          executedWith: 'Apache Calcite-compatible SQL (alasql)',
+          note: 'This uses a JavaScript SQL engine that supports most Apache Calcite SQL syntax'
+        });
+
+      } catch (sqlError) {
+        setTestResult({
+          success: false,
+          error: `SQL Error: ${sqlError.message}`,
+          query: alasqlQuery,
+          suggestion: 'Check your SQL syntax. Common issues: missing quotes around strings, incorrect column names, or unsupported functions.'
+        });
+      }
+
+    } catch (error) {
+      setTestResult({
+        success: false,
+        error: `General Error: ${error.message}`
+      });
+    }
+  };
+
+
 
   useEffect(() => {
     if (selectedNode) {
@@ -875,7 +967,7 @@ FROM FLOWFILE`;
                                     newCodes[index] = { ...newCodes[index], conditions: newConditions };
                                     setConfig(prev => ({ ...prev, responseCodes: newCodes }));
                                   }}
-                                  placeholder="httpCode = 200 AND userStatus = 'SUB' OR SELECT fetchquery FROM FLOWFILE WHEN httpCode = 200 AND userStatus = 'SUB'"
+                                  placeholder="SELECT fetchquery FROM FLOWFILE WHERE httpCode = 200 AND userStatus = 'SUB'"
                                   className="sql-condition-input"
                                 />
                                 <button
@@ -899,53 +991,338 @@ FROM FLOWFILE`;
                               </div>
                             ))}
                             
-                            {/* Add Condition Button */}
-                            {(!responseCode.conditions || responseCode.conditions.length < 5) && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const newCodes = [...(config.responseCodes || [])];
-                                  const currentConditions = newCodes[index].conditions || [];
-                                  const newConditionName = `condition${currentConditions.length + 1}`;
-                                  newCodes[index] = { 
-                                    ...newCodes[index], 
-                                    conditions: [...currentConditions, { name: newConditionName, query: '' }]
-                                  };
-                                  setConfig(prev => ({ ...prev, responseCodes: newCodes }));
-                                }}
-                                className="add-btn"
-                                style={{ fontSize: '0.875rem', padding: '0.25rem 0.5rem' }}
-                              >
-                                ➕ Add Condition (Max 5)
-                              </button>
-                            )}
-                            
-                            {/* Generated Query Preview */}
-                            {responseCode.conditions && responseCode.conditions.length > 0 && (
-                              <div style={{ marginTop: '1rem' }}>
-                                <div style={{ fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: '#374151' }}>
-                                  🔍 Generated NiFi Query:
-                                </div>
-                                <textarea
-                                  readOnly
-                                  value={generateQueryRecord(responseCode)}
-                                  style={{
-                                    width: '100%',
-                                    height: '100px',
-                                    fontSize: '0.75rem',
-                                    fontFamily: 'monospace',
-                                    backgroundColor: '#f3f4f6',
-                                    border: '1px solid #d1d5db',
-                                    borderRadius: '4px',
-                                    padding: '0.5rem',
-                                    resize: 'vertical'
-                                  }}
-                                />
-                                <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.25rem' }}>
-                                  📊 <strong>NiFi Apache Calcite Query:</strong> This query will be used for conditional routing in NiFi
-                                </div>
-                              </div>
-                            )}
+            {/* Add Condition Button */}
+            {(!responseCode.conditions || responseCode.conditions.length < 5) && (
+              <button
+                type="button"
+                onClick={() => {
+                  const newCodes = [...(config.responseCodes || [])];
+                  const currentConditions = newCodes[index].conditions || [];
+                  const newConditionName = `condition${currentConditions.length + 1}`;
+                  newCodes[index] = { 
+                    ...newCodes[index], 
+                    conditions: [...currentConditions, { name: newConditionName, query: '' }]
+                  };
+                  setConfig(prev => ({ ...prev, responseCodes: newCodes }));
+                }}
+                className="add-btn"
+                style={{ fontSize: '0.875rem', padding: '0.25rem 0.5rem' }}
+              >
+                ➕ Add Condition (Max 5)
+              </button>
+            )}
+
+            {/* Apache Calcite SQL Query Examples & Guidelines */}
+            <div style={{ 
+              marginTop: '1rem', 
+              backgroundColor: '#f8fafc', 
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+              padding: '1rem'
+            }}>
+              {/* Generated Query Preview - Moved above examples */}
+              {responseCode.conditions && responseCode.conditions.length > 0 && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <div style={{ fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.5rem', color: '#374151' }}>
+                    🔍 Generated NiFi Query:
+                  </div>
+                  <textarea
+                    readOnly
+                    value={generateQueryRecord(responseCode)}
+                    style={{
+                      width: '100%',
+                      height: '100px',
+                      fontSize: '0.75rem',
+                      fontFamily: 'monospace',
+                      backgroundColor: '#f3f4f6',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '4px',
+                      padding: '0.5rem',
+                      resize: 'vertical'
+                    }}
+                  />
+                  <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.25rem' }}>
+                    📊 <strong>NiFi Apache Calcite Query:</strong> This query will be used for conditional routing in NiFi
+                  </div>
+                </div>
+              )}
+
+              <details style={{ cursor: 'pointer' }}>
+                <summary style={{ 
+                  fontSize: '0.875rem', 
+                  fontWeight: '600', 
+                  color: '#1e40af',
+                  marginBottom: '0.5rem'
+                }}>
+                  📚 Apache Calcite Query Examples & Guidelines
+                </summary>
+                
+                <div style={{ fontSize: '0.8rem', lineHeight: '1.4' }}>
+                  <div style={{ marginBottom: '1rem' }}>
+                    <strong style={{ color: '#dc2626' }}>🔴 Mandatory Rules:</strong>
+                    <ul style={{ marginLeft: '1rem', marginTop: '0.25rem' }}>
+                      <li>Query <strong>MUST</strong> select <code>fetchquery</code> (mandatory field)</li>
+                      <li>Query <strong>MUST</strong> use <code>FROM FLOWFILE</code> (always required)</li>
+                    </ul>
+                  </div>
+
+                  <div style={{ marginBottom: '1rem' }}>
+                    <strong style={{ color: '#059669' }}>✅ Basic Conditional Examples:</strong>
+                    <div style={{ 
+                      backgroundColor: '#f1f5f9', 
+                      padding: '0.5rem', 
+                      borderRadius: '4px',
+                      fontFamily: 'monospace',
+                      fontSize: '0.75rem',
+                      marginTop: '0.25rem'
+                    }}>
+                      <div>SELECT fetchquery FROM FLOWFILE WHERE httpCode = 200 AND userStatus='SUB'</div>
+                      <div>SELECT fetchquery FROM FLOWFILE WHERE httpCode = 200 AND userStatus='AGENT'</div>
+                      <div>SELECT fetchquery FROM FLOWFILE WHERE httpCode = 400 AND errorType='VALIDATION'</div>
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: '1rem' }}>
+                    <strong style={{ color: '#7c3aed' }}>🔢 Arithmetic Operations:</strong>
+                    <div style={{ 
+                      backgroundColor: '#f1f5f9', 
+                      padding: '0.5rem', 
+                      borderRadius: '4px',
+                      fontFamily: 'monospace',
+                      fontSize: '0.75rem',
+                      marginTop: '0.25rem'
+                    }}>
+                      <div>SELECT fetchquery,</div>
+                      <div>&nbsp;&nbsp;CAST(COALESCE(amount1, '0') AS INTEGER)</div>
+                      <div>&nbsp;&nbsp;&nbsp;&nbsp;+ CAST(COALESCE(amount2, '0') AS INTEGER) AS totalAmount</div>
+                      <div>FROM FLOWFILE</div>
+                      <div>WHERE httpCode = 200</div>
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: '1rem' }}>
+                    <strong style={{ color: '#ea580c' }}>🎯 CASE Statements & String Operations:</strong>
+                    <div style={{ 
+                      backgroundColor: '#f1f5f9', 
+                      padding: '0.5rem', 
+                      borderRadius: '4px',
+                      fontFamily: 'monospace',
+                      fontSize: '0.75rem',
+                      marginTop: '0.25rem'
+                    }}>
+                      <div>SELECT fetchquery,</div>
+                      <div>&nbsp;&nbsp;TRIM(</div>
+                      <div>&nbsp;&nbsp;&nbsp;&nbsp;CASE</div>
+                      <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WHEN userId = '3982048023' THEN 'condition1'</div>
+                      <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WHEN userId = '3982048023VIP' THEN 'condition2'</div>
+                      <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ELSE 'NoMatch'</div>
+                      <div>&nbsp;&nbsp;&nbsp;&nbsp;END</div>
+                      <div>&nbsp;&nbsp;) AS matchedPath</div>
+                      <div>FROM FLOWFILE</div>
+                      <div>WHERE httpCode = 200</div>
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: '1rem' }}>
+                    <strong style={{ color: '#0891b2' }}>🔗 Complex Conditions & Multiple Fields:</strong>
+                    <div style={{ 
+                      backgroundColor: '#f1f5f9', 
+                      padding: '0.5rem', 
+                      borderRadius: '4px',
+                      fontFamily: 'monospace',
+                      fontSize: '0.75rem',
+                      marginTop: '0.25rem'
+                    }}>
+                      <div>SELECT fetchquery,</div>
+                      <div>&nbsp;&nbsp;UPPER(TRIM(userName)) AS cleanUserName,</div>
+                      <div>&nbsp;&nbsp;SUBSTRING(phoneNumber, 1, 10) AS shortPhone</div>
+                      <div>FROM FLOWFILE</div>
+                      <div>WHERE httpCode = 200 AND (userType='PREMIUM' OR userType='VIP')</div>
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: '0.5rem' }}>
+                    <strong style={{ color: '#9333ea' }}>🛠️ Available Functions:</strong>
+                    <div style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}>
+                      <span style={{ backgroundColor: '#e0e7ff', padding: '0.125rem 0.25rem', borderRadius: '2px', margin: '0.125rem' }}>TRIM()</span>
+                      <span style={{ backgroundColor: '#e0e7ff', padding: '0.125rem 0.25rem', borderRadius: '2px', margin: '0.125rem' }}>UPPER()</span>
+                      <span style={{ backgroundColor: '#e0e7ff', padding: '0.125rem 0.25rem', borderRadius: '2px', margin: '0.125rem' }}>LOWER()</span>
+                      <span style={{ backgroundColor: '#e0e7ff', padding: '0.125rem 0.25rem', borderRadius: '2px', margin: '0.125rem' }}>SUBSTRING()</span>
+                      <span style={{ backgroundColor: '#e0e7ff', padding: '0.125rem 0.25rem', borderRadius: '2px', margin: '0.125rem' }}>CAST()</span>
+                      <span style={{ backgroundColor: '#e0e7ff', padding: '0.125rem 0.25rem', borderRadius: '2px', margin: '0.125rem' }}>COALESCE()</span>
+                      <span style={{ backgroundColor: '#e0e7ff', padding: '0.125rem 0.25rem', borderRadius: '2px', margin: '0.125rem' }}>CASE/WHEN/ELSE</span>
+                    </div>
+                  </div>
+                </div>
+              </details>
+            </div>
+
+            {/* Query Testing Panel */}
+            <div style={{ 
+              marginTop: '1rem', 
+              backgroundColor: '#f0f9ff', 
+              border: '1px solid #0ea5e9',
+              borderRadius: '8px',
+              padding: '1rem'
+            }}>
+              <details>
+                <summary style={{ 
+                  cursor: 'pointer', 
+                  fontWeight: '600', 
+                  color: '#0369a1',
+                  fontSize: '0.875rem'
+                }}>
+                  🧪 Test Your Apache Calcite SQL Query (Click to expand)
+                </summary>
+                <div style={{ marginTop: '1rem' }}>
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ 
+                      display: 'block', 
+                      fontSize: '0.75rem', 
+                      fontWeight: '500', 
+                      color: '#374151',
+                      marginBottom: '0.25rem'
+                    }}>
+                      📝 Sample JSON Data (FLOWFILE):
+                    </label>
+                    <textarea
+                      placeholder={`{
+  "httpCode": 200,
+  "userStatus": "SUB",
+  "userId": "3982048023",
+  "userName": "John Doe",
+  "phoneNumber": "1234567890123",
+  "amount1": "100",
+  "amount2": "50",
+  "userType": "PREMIUM",
+  "errorType": "VALIDATION",
+  "fetchquery": "menu1"
+}`}
+                      style={{
+                        width: '100%',
+                        height: '150px',
+                        fontSize: '0.7rem',
+                        fontFamily: 'monospace',
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '4px',
+                        padding: '0.5rem',
+                        resize: 'vertical'
+                      }}
+                      value={testData}
+                      onChange={(e) => setTestData(e.target.value)}
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ 
+                      display: 'block', 
+                      fontSize: '0.75rem', 
+                      fontWeight: '500', 
+                      color: '#374151',
+                      marginBottom: '0.25rem'
+                    }}>
+                      🔍 Test Query:
+                    </label>
+                    <textarea
+                      placeholder="SELECT fetchquery FROM FLOWFILE WHERE httpCode = 200 AND userStatus='SUB'"
+                      style={{
+                        width: '100%',
+                        height: '80px',
+                        fontSize: '0.7rem',
+                        fontFamily: 'monospace',
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '4px',
+                        padding: '0.5rem',
+                        resize: 'vertical'
+                      }}
+                      value={testQuery}
+                      onChange={(e) => setTestQuery(e.target.value)}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleTestQuery}
+                    style={{
+                      backgroundColor: '#0369a1',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      padding: '0.5rem 1rem',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer',
+                      marginBottom: '1rem'
+                    }}
+                  >
+                    🚀 Test Query
+                  </button>
+
+                  {testResult && (
+                    <div style={{ marginTop: '1rem' }}>
+                      <label style={{ 
+                        display: 'block', 
+                        fontSize: '0.75rem', 
+                        fontWeight: '500', 
+                        color: '#374151',
+                        marginBottom: '0.25rem'
+                      }}>
+                        📊 Query Result:
+                      </label>
+                      <div style={{
+                        backgroundColor: testResult.success ? '#f0fdf4' : '#fef2f2',
+                        border: `1px solid ${testResult.success ? '#16a34a' : '#dc2626'}`,
+                        borderRadius: '4px',
+                        padding: '0.5rem',
+                        fontFamily: 'monospace',
+                        fontSize: '0.7rem',
+                        whiteSpace: 'pre-wrap'
+                      }}>
+                        {testResult.success ? (
+                          <>
+                            <div style={{ color: '#16a34a', fontWeight: '600' }}>✅ Query executed successfully!</div>
+                            <div style={{ marginTop: '0.5rem' }}>
+                              <strong>Result:</strong>
+                              <pre style={{ margin: '0.25rem 0', backgroundColor: '#ffffff', padding: '0.25rem', borderRadius: '2px' }}>
+                                {JSON.stringify(testResult.result, null, 2)}
+                              </pre>
+                            </div>
+                            <div style={{ marginTop: '0.5rem', color: '#065f46' }}>
+                              <strong>Condition Match:</strong> {testResult.conditionMet ? '✅ TRUE' : '❌ FALSE'}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ color: '#dc2626', fontWeight: '600' }}>❌ Query failed!</div>
+                            <div style={{ marginTop: '0.5rem' }}>
+                              <strong>Error:</strong> {testResult.error}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ 
+                    marginTop: '1rem', 
+                    fontSize: '0.7rem', 
+                    color: '#6b7280',
+                    backgroundColor: '#f9fafb',
+                    padding: '0.5rem',
+                    borderRadius: '4px'
+                  }}>
+                    <strong>💡 Testing Tips:</strong>
+                    <ul style={{ margin: '0.25rem 0', paddingLeft: '1rem' }}>
+                      <li>Modify the JSON data to test different scenarios</li>
+                      <li>Try different query conditions to see how they behave</li>
+                      <li>The query must always SELECT fetchquery FROM FLOWFILE</li>
+                      <li>Use WHEN clause for conditional logic</li>
+                    </ul>
+                  </div>
+                </div>
+              </details>
+            </div>
                           </div>
                         )}
                       </div>
@@ -1341,7 +1718,7 @@ FROM FLOWFILE`;
                                         newCodes[index] = { ...newCodes[index], conditions: newConditions };
                                         setConfig(prev => ({ ...prev, responseCodes: newCodes }));
                                       }}
-                                      placeholder="httpCode = 200 AND userStatus = 'SUB' OR SELECT fetchquery FROM FLOWFILE WHEN httpCode = 200 AND userStatus = 'SUB'"
+                                      placeholder="SELECT fetchquery FROM FLOWFILE WHEN httpCode = 200 AND userStatus = 'SUB'"
                                       className="sql-condition-input"
                                     />
                                     <button
@@ -1386,26 +1763,311 @@ FROM FLOWFILE`;
                                   </button>
                                 )}
 
-                                {/* Generated Query Preview */}
-                                <div className="query-preview" style={{ marginTop: '1rem' }}>
-                                  <label style={{ fontWeight: '500', marginBottom: '0.5rem', display: 'block' }}>
-                                    🔍 Generated NiFi Query:
-                                  </label>
-                                  <textarea
-                                    readOnly
-                                    value={generateQueryRecord(responseCode)}
-                                    rows="8"
-                                    style={{ 
-                                      width: '100%', 
-                                      fontFamily: 'monospace', 
-                                      fontSize: '12px',
-                                      backgroundColor: '#f3f4f6',
-                                      color: '#374151'
-                                    }}
-                                  />
-                                  <small style={{ color: '#6b7280', marginTop: '0.5rem', display: 'block' }}>
-                                    📊 <strong>NiFi Apache Calcite Query:</strong> This query will be used for conditional routing in NiFi
-                                  </small>
+                                {/* Apache Calcite SQL Query Examples & Guidelines */}
+                                <div style={{ 
+                                  marginTop: '1rem', 
+                                  backgroundColor: '#f8fafc', 
+                                  border: '1px solid #e2e8f0',
+                                  borderRadius: '8px',
+                                  padding: '1rem'
+                                }}>
+                                  {/* Generated Query Preview - Moved above examples */}
+                                  <div className="query-preview" style={{ marginBottom: '1rem' }}>
+                                    <label style={{ fontWeight: '500', marginBottom: '0.5rem', display: 'block' }}>
+                                      🔍 Generated NiFi Query:
+                                    </label>
+                                    <textarea
+                                      readOnly
+                                      value={generateQueryRecord(responseCode)}
+                                      rows="8"
+                                      style={{ 
+                                        width: '100%', 
+                                        fontFamily: 'monospace', 
+                                        fontSize: '12px',
+                                        backgroundColor: '#f3f4f6',
+                                        color: '#374151'
+                                      }}
+                                    />
+                                    <small style={{ color: '#6b7280', marginTop: '0.5rem', display: 'block' }}>
+                                      📊 <strong>NiFi Apache Calcite Query:</strong> This query will be used for conditional routing in NiFi
+                                    </small>
+                                  </div>
+
+                                  <details style={{ cursor: 'pointer' }}>
+                                    <summary style={{ 
+                                      fontSize: '0.875rem', 
+                                      fontWeight: '600', 
+                                      color: '#1e40af',
+                                      marginBottom: '0.5rem'
+                                    }}>
+                                      📚 Apache Calcite Query Examples & Guidelines
+                                    </summary>
+                                    
+                                    <div style={{ fontSize: '0.8rem', lineHeight: '1.4' }}>
+                                      <div style={{ marginBottom: '1rem' }}>
+                                        <strong style={{ color: '#dc2626' }}>🔴 Mandatory Rules:</strong>
+                                        <ul style={{ marginLeft: '1rem', marginTop: '0.25rem' }}>
+                                          <li>Query <strong>MUST</strong> select <code>fetchquery</code> (mandatory field)</li>
+                                          <li>Query <strong>MUST</strong> use <code>FROM FLOWFILE</code> (always required)</li>
+                                        </ul>
+                                      </div>
+
+                                      <div style={{ marginBottom: '1rem' }}>
+                                        <strong style={{ color: '#059669' }}>✅ Basic Conditional Examples:</strong>
+                                        <div style={{ 
+                                          backgroundColor: '#f1f5f9', 
+                                          padding: '0.5rem', 
+                                          borderRadius: '4px',
+                                          fontFamily: 'monospace',
+                                          fontSize: '0.75rem',
+                                          marginTop: '0.25rem'
+                                        }}>
+                                          <div>SELECT fetchquery FROM FLOWFILE WHERE httpCode = 200 AND userStatus='SUB'</div>
+                                          <div>SELECT fetchquery FROM FLOWFILE WHERE httpCode = 200 AND userStatus='AGENT'</div>
+                                          <div>SELECT fetchquery FROM FLOWFILE WHERE httpCode = 400 AND errorType='VALIDATION'</div>
+                                        </div>
+                                      </div>
+
+                                      <div style={{ marginBottom: '1rem' }}>
+                                        <strong style={{ color: '#7c3aed' }}>🔢 Arithmetic Operations:</strong>
+                                        <div style={{ 
+                                          backgroundColor: '#f1f5f9', 
+                                          padding: '0.5rem', 
+                                          borderRadius: '4px',
+                                          fontFamily: 'monospace',
+                                          fontSize: '0.75rem',
+                                          marginTop: '0.25rem'
+                                        }}>
+                                          <div>SELECT fetchquery,</div>
+                                          <div>&nbsp;&nbsp;CAST(COALESCE(amount1, '0') AS INTEGER)</div>
+                                          <div>&nbsp;&nbsp;&nbsp;&nbsp;+ CAST(COALESCE(amount2, '0') AS INTEGER) AS totalAmount</div>
+                                          <div>FROM FLOWFILE</div>
+                                          <div>WHERE httpCode = 200</div>
+                                        </div>
+                                      </div>
+
+                                      <div style={{ marginBottom: '1rem' }}>
+                                        <strong style={{ color: '#ea580c' }}>🎯 CASE Statements & String Operations:</strong>
+                                        <div style={{ 
+                                          backgroundColor: '#f1f5f9', 
+                                          padding: '0.5rem', 
+                                          borderRadius: '4px',
+                                          fontFamily: 'monospace',
+                                          fontSize: '0.75rem',
+                                          marginTop: '0.25rem'
+                                        }}>
+                                          <div>SELECT fetchquery,</div>
+                                          <div>&nbsp;&nbsp;TRIM(</div>
+                                          <div>&nbsp;&nbsp;&nbsp;&nbsp;CASE</div>
+                                          <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WHEN userId = '3982048023' THEN 'condition1'</div>
+                                          <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;WHEN userId = '3982048023VIP' THEN 'condition2'</div>
+                                          <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ELSE 'NoMatch'</div>
+                                          <div>&nbsp;&nbsp;&nbsp;&nbsp;END</div>
+                                          <div>&nbsp;&nbsp;) AS matchedPath</div>
+                                          <div>FROM FLOWFILE</div>
+                                          <div>WHERE httpCode = 200</div>
+                                        </div>
+                                      </div>
+
+                                      <div style={{ marginBottom: '1rem' }}>
+                                        <strong style={{ color: '#0891b2' }}>🔗 Complex Conditions & Multiple Fields:</strong>
+                                        <div style={{ 
+                                          backgroundColor: '#f1f5f9', 
+                                          padding: '0.5rem', 
+                                          borderRadius: '4px',
+                                          fontFamily: 'monospace',
+                                          fontSize: '0.75rem',
+                                          marginTop: '0.25rem'
+                                        }}>
+                                          <div>SELECT fetchquery,</div>
+                                          <div>&nbsp;&nbsp;UPPER(TRIM(userName)) AS cleanUserName,</div>
+                                          <div>&nbsp;&nbsp;SUBSTRING(phoneNumber, 1, 10) AS shortPhone</div>
+                                          <div>FROM FLOWFILE</div>
+                                          <div>WHERE httpCode = 200 AND (userType='PREMIUM' OR userType='VIP')</div>
+                                        </div>
+                                      </div>
+
+                                      <div style={{ marginBottom: '0.5rem' }}>
+                                        <strong style={{ color: '#9333ea' }}>🛠️ Available Functions:</strong>
+                                        <div style={{ marginTop: '0.25rem', fontSize: '0.75rem' }}>
+                                          <span style={{ backgroundColor: '#e0e7ff', padding: '0.125rem 0.25rem', borderRadius: '2px', margin: '0.125rem' }}>TRIM()</span>
+                                          <span style={{ backgroundColor: '#e0e7ff', padding: '0.125rem 0.25rem', borderRadius: '2px', margin: '0.125rem' }}>UPPER()</span>
+                                          <span style={{ backgroundColor: '#e0e7ff', padding: '0.125rem 0.25rem', borderRadius: '2px', margin: '0.125rem' }}>LOWER()</span>
+                                          <span style={{ backgroundColor: '#e0e7ff', padding: '0.125rem 0.25rem', borderRadius: '2px', margin: '0.125rem' }}>SUBSTRING()</span>
+                                          <span style={{ backgroundColor: '#e0e7ff', padding: '0.125rem 0.25rem', borderRadius: '2px', margin: '0.125rem' }}>CAST()</span>
+                                          <span style={{ backgroundColor: '#e0e7ff', padding: '0.125rem 0.25rem', borderRadius: '2px', margin: '0.125rem' }}>COALESCE()</span>
+                                          <span style={{ backgroundColor: '#e0e7ff', padding: '0.125rem 0.25rem', borderRadius: '2px', margin: '0.125rem' }}>CASE/WHEN/ELSE</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </details>
+                                </div>
+
+                                {/* Query Testing Panel */}
+                                <div style={{ 
+                                  marginTop: '1rem', 
+                                  backgroundColor: '#f0f9ff', 
+                                  border: '1px solid #0ea5e9',
+                                  borderRadius: '8px',
+                                  padding: '1rem'
+                                }}>
+                                  <details>
+                                    <summary style={{ 
+                                      cursor: 'pointer', 
+                                      fontWeight: '600', 
+                                      color: '#0369a1',
+                                      fontSize: '0.875rem'
+                                    }}>
+                                      🧪 Test Your Apache Calcite SQL Query (Click to expand)
+                                    </summary>
+                                    <div style={{ marginTop: '1rem' }}>
+                                      <div style={{ marginBottom: '1rem' }}>
+                                        <label style={{ 
+                                          display: 'block', 
+                                          fontSize: '0.75rem', 
+                                          fontWeight: '500', 
+                                          color: '#374151',
+                                          marginBottom: '0.25rem'
+                                        }}>
+                                          📝 Sample JSON Data (FLOWFILE):
+                                        </label>
+                                        <textarea
+                                          placeholder={`{
+  "httpCode": 200,
+  "userStatus": "SUB",
+  "userId": "3982048023",
+  "userName": "John Doe",
+  "phoneNumber": "1234567890123",
+  "amount1": "100",
+  "amount2": "50",
+  "userType": "PREMIUM",
+  "errorType": "VALIDATION",
+  "fetchquery": "menu1"
+}`}
+                                          style={{
+                                            width: '100%',
+                                            height: '150px',
+                                            fontSize: '0.7rem',
+                                            fontFamily: 'monospace',
+                                            backgroundColor: '#ffffff',
+                                            border: '1px solid #d1d5db',
+                                            borderRadius: '4px',
+                                            padding: '0.5rem',
+                                            resize: 'vertical'
+                                          }}
+                                          value={testData}
+                                          onChange={(e) => setTestData(e.target.value)}
+                                        />
+                                      </div>
+
+                                      <div style={{ marginBottom: '1rem' }}>
+                                        <label style={{ 
+                                          display: 'block', 
+                                          fontSize: '0.75rem', 
+                                          fontWeight: '500', 
+                                          color: '#374151',
+                                          marginBottom: '0.25rem'
+                                        }}>
+                                          🔍 Test Query:
+                                        </label>
+                                        <textarea
+                                          placeholder="SELECT fetchquery FROM FLOWFILE WHERE httpCode = 200 AND userStatus='SUB'"
+                                          style={{
+                                            width: '100%',
+                                            height: '80px',
+                                            fontSize: '0.7rem',
+                                            fontFamily: 'monospace',
+                                            backgroundColor: '#ffffff',
+                                            border: '1px solid #d1d5db',
+                                            borderRadius: '4px',
+                                            padding: '0.5rem',
+                                            resize: 'vertical'
+                                          }}
+                                          value={testQuery}
+                                          onChange={(e) => setTestQuery(e.target.value)}
+                                        />
+                                      </div>
+
+                                      <button
+                                        type="button"
+                                        onClick={handleTestQuery}
+                                        style={{
+                                          backgroundColor: '#0369a1',
+                                          color: 'white',
+                                          border: 'none',
+                                          borderRadius: '4px',
+                                          padding: '0.5rem 1rem',
+                                          fontSize: '0.75rem',
+                                          cursor: 'pointer',
+                                          marginBottom: '1rem'
+                                        }}
+                                      >
+                                        🚀 Test Query
+                                      </button>
+
+                                      {testResult && (
+                                        <div style={{ marginTop: '1rem' }}>
+                                          <label style={{ 
+                                            display: 'block', 
+                                            fontSize: '0.75rem', 
+                                            fontWeight: '500', 
+                                            color: '#374151',
+                                            marginBottom: '0.25rem'
+                                          }}>
+                                            📊 Query Result:
+                                          </label>
+                                          <div style={{
+                                            backgroundColor: testResult.success ? '#f0fdf4' : '#fef2f2',
+                                            border: `1px solid ${testResult.success ? '#16a34a' : '#dc2626'}`,
+                                            borderRadius: '4px',
+                                            padding: '0.5rem',
+                                            fontFamily: 'monospace',
+                                            fontSize: '0.7rem',
+                                            whiteSpace: 'pre-wrap'
+                                          }}>
+                                            {testResult.success ? (
+                                              <>
+                                                <div style={{ color: '#16a34a', fontWeight: '600' }}>✅ Query executed successfully!</div>
+                                                <div style={{ marginTop: '0.5rem' }}>
+                                                  <strong>Result:</strong>
+                                                  <pre style={{ margin: '0.25rem 0', backgroundColor: '#ffffff', padding: '0.25rem', borderRadius: '2px' }}>
+                                                    {JSON.stringify(testResult.result, null, 2)}
+                                                  </pre>
+                                                </div>
+                                                <div style={{ marginTop: '0.5rem', color: '#065f46' }}>
+                                                  <strong>Condition Match:</strong> {testResult.conditionMet ? '✅ TRUE' : '❌ FALSE'}
+                                                </div>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <div style={{ color: '#dc2626', fontWeight: '600' }}>❌ Query failed!</div>
+                                                <div style={{ marginTop: '0.5rem' }}>
+                                                  <strong>Error:</strong> {testResult.error}
+                                                </div>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      <div style={{ 
+                                        marginTop: '1rem', 
+                                        fontSize: '0.7rem', 
+                                        color: '#6b7280',
+                                        backgroundColor: '#f9fafb',
+                                        padding: '0.5rem',
+                                        borderRadius: '4px'
+                                      }}>
+                                        <strong>💡 Testing Tips:</strong>
+                                        <ul style={{ margin: '0.25rem 0', paddingLeft: '1rem' }}>
+                                          <li>Modify the JSON data to test different scenarios</li>
+                                          <li>Try different query conditions to see how they behave</li>
+                                          <li>The query must always SELECT fetchquery FROM FLOWFILE</li>
+                                          <li>Use WHEN clause for conditional logic</li>
+                                        </ul>
+                                      </div>
+                                    </div>
+                                  </details>
                                 </div>
                               </div>
                             )}
