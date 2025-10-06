@@ -1,0 +1,29 @@
+{
+  "name": "Flow_start_1758807107061_956_Path_1",
+  "startInput": "123",
+  "steps": [
+    {
+      "input": "123",
+      "nodeType": "START",
+      "nextNodeType": "INPUT"
+    },
+    {
+      "input": "*",
+      "storeAttribute": "USERPIN",
+      "nodeType": "INPUT",
+      "nextNodeType": "MENU"
+    }
+  ],
+  "assertions": [
+    {
+      "expectedResponse": "Please enter your pin:",
+      "nodeType": "INPUT",
+      "assertionType": "input"
+    },
+    {
+      "expectedResponse": "1. Send Money\n2. Pay Bills",
+      "nodeType": "MENU",
+      "assertionType": "menu"
+    }
+  ]
+}

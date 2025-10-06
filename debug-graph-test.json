@@ -1,0 +1,81 @@
+{
+  "nodes": [
+    {
+      "id": "start_1758807107061_956",
+      "type": "start",
+      "data": {
+        "config": {
+          "prompts": {
+            "en": "Welcome to USSD"
+          },
+          "transitions": {
+            "123": "input_pin_123"
+          },
+          "ussdCode": "123"
+        }
+      }
+    },
+    {
+      "id": "input_pin_123",
+      "type": "input",
+      "data": {
+        "config": {
+          "prompts": {
+            "en": "Please enter your pin:"
+          },
+          "transitions": {
+            "*": "menu_main_456"
+          },
+          "storeAttribute": "USERPIN"
+        }
+      }
+    },
+    {
+      "id": "menu_main_456",
+      "type": "menu",
+      "data": {
+        "config": {
+          "prompts": {
+            "en": "1. Send Money\n2. Pay Bills"
+          },
+          "transitions": {
+            "1": "end_789",
+            "2": "end_789"
+          }
+        }
+      }
+    },
+    {
+      "id": "end_789",
+      "type": "end",
+      "data": {
+        "config": {
+          "prompts": {
+            "en": "Transaction completed!"
+          }
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "start_1758807107061_956",
+      "target": "input_pin_123"
+    },
+    {
+      "source": "input_pin_123",
+      "target": "menu_main_456"
+    },
+    {
+      "source": "menu_main_456",
+      "target": "end_789",
+      "sourceHandle": "1"
+    },
+    {
+      "source": "menu_main_456",
+      "target": "end_789",
+      "sourceHandle": "2"
+    }
+  ],
+  "timestamp": "2025-10-01T21:39:42.877Z"
+}

@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { exportToFlowFormat } from '../utils/flowUtils';
 
+// Note: For now, we'll inline the generator logic since module imports are complex in React
+// TODO: Convert to ES modules or use dynamic imports
+
 const K6TestGenerator = ({ nodes, edges, onClose }) => {
   const [config, setConfig] = useState({
     baseUrl: 'http://host.docker.internal:9401',
@@ -26,6 +29,9 @@ const K6TestGenerator = ({ nodes, edges, onClose }) => {
       customMappings: ['BALANCE:amount', 'OTP:pin', 'BENEFICIARY:phone', 'CARD:account']
     }
   });
+
+  // State for dynamic menu configurations
+  const [dynamicMenus, setDynamicMenus] = useState({});
 
   const [generatedScript, setGeneratedScript] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -151,23 +157,68 @@ const K6TestGenerator = ({ nodes, edges, onClose }) => {
     }
   };
 
-  // Generate all possible test case combinations
+  // Helper functions for test case generation
+  const getNodeType = (node) => {
+    const type = node.type || (node.data && node.data.type) || 'UNKNOWN';
+    return type.toUpperCase();
+  };
+  
+  const getStartInput = (node) => {
+    if (node.data && node.data.config && node.data.config.ussdCode) {
+      return node.data.config.ussdCode;
+    }
+    return '*123#';
+  };
+
+  // Detect DYNAMIC-MENU nodes and initialize their configurations
+  const detectDynamicMenus = () => {
+    const dynamicMenuNodes = nodes.filter(node => 
+      getNodeType(node) === 'DYNAMIC-MENU'
+    );
+    
+    const menuConfigs = {};
+    dynamicMenuNodes.forEach(node => {
+      if (!dynamicMenus[node.id]) {
+        menuConfigs[node.id] = {
+          nodeId: node.id,
+          nodeName: node.data?.config?.name || `Dynamic Menu ${node.id}`,
+          menuContent: '', // User will input the actual menu content
+          defaultContent: 'Please select an option:', // Fallback
+          sampleContent: '1.Electricity Board\n2.Water Supply Dept\n3.Mobile Recharge\n4.Gas Pipeline Service'
+        };
+      } else {
+        menuConfigs[node.id] = dynamicMenus[node.id];
+      }
+    });
+    
+    setDynamicMenus(menuConfigs);
+    return dynamicMenuNodes;
+  };
+
+  // Update dynamic menu content
+  const updateDynamicMenuContent = (nodeId, content) => {
+    setDynamicMenus(prev => ({
+      ...prev,
+      [nodeId]: {
+        ...prev[nodeId],
+        menuContent: content
+      }
+    }));
+  };
+
+  // React effect to detect dynamic menus when nodes change
+  React.useEffect(() => {
+    detectDynamicMenus();
+  }, [nodes]);
+
+  // Generate all possible test case combinations using new graph-based approach
   const generateAllTestCases = () => {
     try {
-      // Use the same data structure that was used for the K6 script
-      const exportedNodes = exportToFlowFormat(nodes, edges);
-      const actualStoreAttributes = extractStoreAttributesFromFlow(nodes);
-      const flowData = {
-        nodes: exportedNodes,
-        edges: edges,
-        storeAttributes: actualStoreAttributes
-      };
+      console.log('🔍 Generating test cases using Canvas Graph structure...');
       
-      console.log('Flow data for test cases:', flowData);
-      
-      // Find START nodes and get all paths (same logic as K6 script generation)
-      const startNodes = flowData.nodes.filter(node => 
-        node.type && node.type.toLowerCase() === 'start'
+      // Find START and END nodes
+      const startNodes = nodes.filter(node => 
+        node.type === 'start' || (node.data && node.data.type === 'START')
       );
       
       if (startNodes.length === 0) {
@@ -176,72 +227,112 @@ const K6TestGenerator = ({ nodes, edges, onClose }) => {
         return [];
       }
       
-      const allCombinations = [];
+      const allTestCases = [];
       
-      startNodes.forEach((startNode, startIndex) => {
-        const paths = findFlowPaths(startNode, flowData.nodes);
+      startNodes.forEach(startNode => {
+        const paths = findPathsFromStart(startNode, nodes, edges);
         console.log(`Found ${paths.length} paths for START node ${startNode.id}`);
         
         paths.forEach((path, pathIndex) => {
-          console.log(`Path ${pathIndex + 1} structure:`, path);
-          
-          // Convert path to inputs and metadata (same as K6 script generation)
-          const inputsWithMetadata = extractInputsFromPath(path);
-          const inputs = inputsWithMetadata.map(item => item.input);
-          const startInput = config.dialCode || Object.keys(startNode.transitions || {})[0] || 'default';
-          
-          console.log(`Path ${pathIndex + 1} inputs:`, inputs);
-          console.log(`Path ${pathIndex + 1} inputMetadata:`, inputsWithMetadata);
-          
-          // Extract inputs with storeAttribute from the path
-          const pathInputsWithStoreAttributes = [];
-          
-          if (inputsWithMetadata) {
-            inputsWithMetadata.forEach(meta => {
-              if (meta.storeAttribute && meta.input === '*') {
-                pathInputsWithStoreAttributes.push({
-                  storeAttribute: meta.storeAttribute,
-                  nodeType: meta.nodeType
-                });
+          const testCase = {
+            id: allTestCases.length + 1,
+            name: `Flow_${startNode.id}_Path_${pathIndex + 1}`,
+            description: createTestCaseDescription(path),
+            steps: path.map((node, nodeIndex) => {
+              if (nodeIndex === path.length - 1) return null; // Skip last node (no next step)
+              
+              const nextNode = path[nodeIndex + 1];
+              const nodeType = getNodeType(node);
+              const nextNodeType = getNodeType(nextNode);
+              
+              let action = '';
+              let expectedResult = '';
+              
+              // Create action description
+              switch (nodeType) {
+                case 'START':
+                  action = `Dial USSD code: ${getStartInput(node)}`;
+                  break;
+                case 'MENU':
+                  action = `Select menu option: 1`;
+                  break;
+                case 'INPUT':
+                  const storeAttr = node.data?.config?.variableName || 'input';
+                  action = `Enter ${storeAttr}: dynamic value`;
+                  break;
+                case 'DYNAMIC-MENU':
+                  action = `Select from dynamic menu: dynamic option`;
+                  break;
+                case 'ACTION':
+                  action = `Process action: API call`;
+                  break;
+                default:
+                  action = `Navigate from ${nodeType}`;
               }
-            });
-          }
-
-          if (pathInputsWithStoreAttributes.length === 0) {
-            // Path with no dynamic inputs - show the static flow
-            allCombinations.push({
-              pathId: pathIndex + 1,
-              pathName: `Flow_${startNode.id}_Path_${pathIndex + 1}`,
-              steps: createStepsFromInputs(inputs, inputsWithMetadata),
-              inputs: {},
-              description: createFlowDescription(inputs, inputsWithMetadata, {})
-            });
-          } else {
-            // Generate combinations for paths with dynamic inputs
-            const inputCombinations = generateInputCombinationsFromK6Data(pathInputsWithStoreAttributes);
-            
-            inputCombinations.forEach((combination, combIndex) => {
-              allCombinations.push({
-                pathId: pathIndex + 1,
-                combinationId: combIndex + 1,
-                pathName: `Flow_${startNode.id}_Path_${pathIndex + 1} - Combination ${combIndex + 1}`,
-                steps: createStepsFromInputs(inputs, inputsWithMetadata, combination),
-                inputs: combination,
-                description: createFlowDescription(inputs, inputsWithMetadata, combination)
-              });
-            });
-          }
+              
+              // Create expected result
+              if (nextNode.data && nextNode.data.config && nextNode.data.config.prompts && nextNode.data.config.prompts.en) {
+                expectedResult = nextNode.data.config.prompts.en;
+              } else {
+                switch (nextNodeType) {
+                  case 'INPUT':
+                    expectedResult = 'Please enter your input:';
+                    break;
+                  case 'MENU':
+                    expectedResult = 'Please select an option:';
+                    break;
+                  case 'END':
+                    expectedResult = 'Thank you for using our service!';
+                    break;
+                  default:
+                    expectedResult = 'Continue to next step';
+                }
+              }
+              
+              return {
+                stepNumber: nodeIndex + 1,
+                action: action,
+                expectedResult: expectedResult,
+                input: nodeType === 'INPUT' ? '*' : (nodeType === 'START' ? getStartInput(node) : '1'),
+                nodeType: nodeType
+              };
+            }).filter(step => step !== null) // Remove null entries
+          };
+          
+          allTestCases.push(testCase);
         });
       });
-
-      console.log('Generated test cases:', allCombinations);
-      setTestCases(allCombinations);
-      return allCombinations;
+      
+      console.log('📊 Test case generation results:', {
+        testCases: allTestCases.length,
+        startNodes: startNodes.length
+      });
+      
+      setTestCases(allTestCases);
+      return allTestCases;
     } catch (error) {
-      console.error('Error generating test cases:', error);
+      console.error('❌ Error generating test cases:', error);
       setTestCases([]);
       return [];
     }
+  };
+
+  // Create test case description from path
+  const createTestCaseDescription = (path) => {
+    const pathSteps = path.map(node => {
+      const nodeType = getNodeType(node);
+      let stepDesc = nodeType;
+      
+      if (nodeType === 'INPUT' && node.data?.config?.variableName) {
+        stepDesc += `(${node.data.config.variableName})`;
+      } else if (nodeType === 'START' && node.data?.config?.ussdCode) {
+        stepDesc += `(${node.data.config.ussdCode})`;
+      }
+      
+      return stepDesc;
+    }).join(' → ');
+    
+    return `Flow path: ${pathSteps}`;
   };
 
   // Create steps visualization from K6 data structure
@@ -349,129 +440,148 @@ const K6TestGenerator = ({ nodes, edges, onClose }) => {
     return Array.from(endNodes);
   };
 
-  // Analyze K6 script coverage
+  // Analyze K6 script coverage using new graph-based approach
   const analyzeK6Coverage = () => {
     if (!generatedScript || testCases.length === 0) {
       return <div className="coverage-item warning">⚠️ Cannot analyze coverage - missing data</div>;
     }
 
-    // Extract scenarios from generated script
-    const scenarioMatches = generatedScript.match(/const FLOW_SCENARIOS = \[([\s\S]*?)\];/);
-    let k6ScenariosCount = 0;
-    
-    if (scenarioMatches) {
-      try {
-        // Count actual scenarios in the script
-        const scenariosText = scenarioMatches[1];
-        const scenarioBlocks = scenariosText.split(/\{\s*"name"/).length - 1; // Count scenario objects
-        k6ScenariosCount = scenarioBlocks;
-      } catch (error) {
-        console.error('Error parsing K6 scenarios:', error);
-        // Fallback: count by looking for scenario names
-        const nameMatches = generatedScript.match(/"name":\s*"Flow_[^"]+"/g);
-        k6ScenariosCount = nameMatches ? nameMatches.length : 0;
+    try {
+      // Create generator to get analysis
+      const graphData = { nodes: nodes, edges: edges, timestamp: new Date().toISOString() };
+      const generator = new K6GraphTestGenerator(graphData, config);
+      const analysis = generator.getFlowAnalysis();
+      
+      // Extract scenarios from generated script
+      const scenarioMatches = generatedScript.match(/const FLOW_SCENARIOS = \[([\s\S]*?)\];/);
+      let k6ScenariosCount = 0;
+      
+      if (scenarioMatches) {
+        try {
+          const scenariosText = scenarioMatches[1];
+          const scenarioBlocks = scenariosText.split(/\{\s*"name"/).length - 1;
+          k6ScenariosCount = scenarioBlocks;
+        } catch (error) {
+          console.error('Error parsing K6 scenarios:', error);
+          const nameMatches = generatedScript.match(/"name":\s*"Flow_[^"]+"/g);
+          k6ScenariosCount = nameMatches ? nameMatches.length : 0;
+        }
       }
+
+      const coverage = {
+        testCasesTotal: testCases.length,
+        maxPossible: analysis.totalScenarios,
+        k6ScenariosTotal: k6ScenariosCount,
+        nodesCovered: analysis.totalNodes,
+        edgesCovered: analysis.totalEdges,
+        testCaseCoverage: analysis.totalScenarios > 0 ? Math.round((testCases.length / analysis.totalScenarios) * 100) : 0,
+        k6Coverage: analysis.totalScenarios > 0 ? Math.round((k6ScenariosCount / analysis.totalScenarios) * 100) : 0,
+        pathCoverage: Math.round((analysis.averagePathLength / analysis.totalNodes) * 100),
+        dynamicMenuSupport: analysis.dynamicMenuNodes > 0,
+        actionNodeSupport: analysis.actionNodes > 0
+      };
+
+      const testCasesWithDynamicInputs = testCases.filter(tc => 
+        tc.steps && tc.steps.some(step => step.input === '*' || step.action.includes('dynamic'))
+      );
+      const dynamicInputCombinations = testCasesWithDynamicInputs.length;
+      
+      const hasDynamicInputs = generatedScript.includes('generateDynamicValue') && 
+                              generatedScript.includes('storeAttribute');
+
+      return (
+        <div className="coverage-results">
+          <div className="coverage-item">
+            <span className={`coverage-status ${coverage.testCaseCoverage >= 95 ? 'good' : coverage.testCaseCoverage >= 80 ? 'warning' : 'error'}`}>
+              {coverage.testCaseCoverage >= 95 ? '✅' : coverage.testCaseCoverage >= 80 ? '⚠️' : '❌'}
+            </span>
+            <div className="coverage-text">
+              <strong>Test Case Discovery:</strong> {coverage.testCasesTotal} test cases from {coverage.maxPossible} possible scenarios ({coverage.testCaseCoverage}%)
+            </div>
+          </div>
+
+          <div className="coverage-item">
+            <span className={`coverage-status ${coverage.k6Coverage >= 95 ? 'good' : coverage.k6Coverage >= 80 ? 'warning' : 'error'}`}>
+              {coverage.k6Coverage >= 95 ? '✅' : coverage.k6Coverage >= 80 ? '⚠️' : '❌'}
+            </span>
+            <div className="coverage-text">
+              <strong>K6 Script Coverage:</strong> {coverage.k6ScenariosTotal} scenarios covering {coverage.k6Coverage}% of possible flows
+            </div>
+          </div>
+          
+          <div className="coverage-item">
+            <span className={`coverage-status ${coverage.pathCoverage >= 80 ? 'good' : coverage.pathCoverage >= 60 ? 'warning' : 'error'}`}>
+              {coverage.pathCoverage >= 80 ? '✅' : coverage.pathCoverage >= 60 ? '⚠️' : '❌'}
+            </span>
+            <div className="coverage-text">
+              <strong>Path Coverage:</strong> {coverage.pathCoverage}% average path depth ({coverage.nodesCovered} nodes, {coverage.edgesCovered} edges)
+            </div>
+          </div>
+          
+          <div className="coverage-item">
+            <span className={`coverage-status ${hasDynamicInputs ? 'good' : 'error'}`}>
+              {hasDynamicInputs ? '✅' : '❌'}
+            </span>
+            <div className="coverage-text">
+              <strong>Dynamic Input Support:</strong> {hasDynamicInputs ? 'Enabled' : 'Missing'} 
+              {dynamicInputCombinations > 0 && ` (${dynamicInputCombinations} dynamic test cases)`}
+            </div>
+          </div>
+          
+          <div className="coverage-item">
+            <span className={`coverage-status ${coverage.dynamicMenuSupport ? 'good' : 'warning'}`}>
+              {coverage.dynamicMenuSupport ? '✅' : '⚠️'}
+            </span>
+            <div className="coverage-text">
+              <strong>Dynamic Menu Support:</strong> {coverage.dynamicMenuSupport ? `Detected (${analysis.dynamicMenuNodes} nodes)` : 'No dynamic menus found'}
+            </div>
+          </div>
+          
+          <div className="coverage-item">
+            <span className={`coverage-status ${coverage.actionNodeSupport ? 'good' : 'warning'}`}>
+              {coverage.actionNodeSupport ? '✅' : '⚠️'}
+            </span>
+            <div className="coverage-text">
+              <strong>Action Node Support:</strong> {coverage.actionNodeSupport ? `Detected (${analysis.actionNodes} nodes)` : 'No action nodes found'}
+            </div>
+          </div>
+
+          {(coverage.testCaseCoverage < 95 || coverage.k6Coverage < 95) && (
+            <div className="coverage-recommendation">
+              <h5>💡 Recommendations:</h5>
+              <ul>
+                {coverage.testCaseCoverage < 95 && (
+                  <li>Test case generation found {coverage.testCasesTotal}/{coverage.maxPossible} possible scenarios - some paths may be unreachable</li>
+                )}
+                {coverage.k6Coverage < 80 && (
+                  <li>K6 script covers only {coverage.k6ScenariosTotal} scenarios - consider adding more flow paths</li>
+                )}
+                {!hasDynamicInputs && (
+                  <li>Enable dynamic input generation to test all storeAttribute combinations</li>
+                )}
+                {!coverage.dynamicMenuSupport && (
+                  <li>Consider adding dynamic menus to test API-driven menu content</li>
+                )}
+                {coverage.pathCoverage < 80 && (
+                  <li>Average path coverage is {coverage.pathCoverage}% - consider longer, more complex flows</li>
+                )}
+              </ul>
+            </div>
+          )}
+
+          {coverage.testCaseCoverage >= 95 && coverage.k6Coverage >= 95 && (
+            <div className="coverage-success">
+              <h5>🎉 Excellent Coverage!</h5>
+              <p>Your graph-based test setup covers {coverage.testCaseCoverage}% of possible flows with comprehensive K6 scenarios. 
+              Flow includes {analysis.nodeTypes.join(', ')} node types for thorough testing.</p>
+            </div>
+          )}
+        </div>
+      );
+    } catch (error) {
+      console.error('Error analyzing coverage:', error);
+      return <div className="coverage-item error">❌ Error analyzing coverage: {error.message}</div>;
     }
-
-    const maxPossibleTestCases = 66; // Correct maximum based on your flow analysis
-    const actualTestCases = testCases.length;
-    
-    const coverage = {
-      testCasesTotal: actualTestCases,
-      maxPossible: maxPossibleTestCases,
-      k6ScenariosTotal: k6ScenariosCount,
-      testCaseCoverage: Math.round((actualTestCases / maxPossibleTestCases) * 100),
-      k6Coverage: k6ScenariosCount > 0 ? Math.round((k6ScenariosCount / maxPossibleTestCases) * 100) : 0
-    };
-
-    // Dynamic input coverage
-    const testCasesWithDynamicInputs = testCases.filter(tc => tc.inputs && Object.keys(tc.inputs).length > 0);
-    const dynamicInputCombinations = testCasesWithDynamicInputs.length;
-    
-    // Check if K6 script has dynamic input handling
-    const hasDynamicInputs = generatedScript.includes('attributeConfigs') && 
-                            generatedScript.includes('processFlowInput');
-
-    return (
-      <div className="coverage-results">
-        <div className="coverage-item">
-          <span className={`coverage-status ${coverage.testCaseCoverage >= 95 ? 'good' : coverage.testCaseCoverage >= 80 ? 'warning' : 'error'}`}>
-            {coverage.testCaseCoverage >= 95 ? '✅' : coverage.testCaseCoverage >= 80 ? '⚠️' : '❌'}
-          </span>
-          <div className="coverage-text">
-            <strong>Test Case Discovery:</strong> {coverage.testCasesTotal} of {coverage.maxPossible} possible combinations ({coverage.testCaseCoverage}%)
-          </div>
-        </div>
-
-        <div className="coverage-item">
-          <span className={`coverage-status ${coverage.k6Coverage >= 95 ? 'good' : coverage.k6Coverage >= 80 ? 'warning' : 'error'}`}>
-            {coverage.k6Coverage >= 95 ? '✅' : coverage.k6Coverage >= 80 ? '⚠️' : '❌'}
-          </span>
-          <div className="coverage-text">
-            <strong>K6 Script Coverage:</strong> {coverage.k6ScenariosTotal} scenarios covering {coverage.k6Coverage}% of possible flows
-          </div>
-        </div>
-        
-        <div className="coverage-item">
-          <span className={`coverage-status ${hasDynamicInputs ? 'good' : 'error'}`}>
-            {hasDynamicInputs ? '✅' : '❌'}
-          </span>
-          <div className="coverage-text">
-            <strong>Dynamic Input Support:</strong> {hasDynamicInputs ? 'Enabled' : 'Missing'} 
-            {dynamicInputCombinations > 0 && ` (${dynamicInputCombinations} combinations)`}
-          </div>
-        </div>
-        
-        <div className="coverage-item">
-          <span className={`coverage-status ${generatedScript.includes('storeAttribute') ? 'good' : 'warning'}`}>
-            {generatedScript.includes('storeAttribute') ? '✅' : '⚠️'}
-          </span>
-          <div className="coverage-text">
-            <strong>Store Attributes:</strong> {generatedScript.includes('storeAttribute') ? 'Detected' : 'Limited'} 
-            (PIN, AMOUNT, RCMSISDN)
-          </div>
-        </div>
-        
-        <div className="coverage-item">
-          <span className={`coverage-status ${getUniqueEndNodes().length > 1 ? 'good' : 'warning'}`}>
-            {getUniqueEndNodes().length > 1 ? '✅' : '⚠️'}
-          </span>
-          <div className="coverage-text">
-            <strong>End Point Coverage:</strong> {getUniqueEndNodes().length} unique outcomes tested
-          </div>
-        </div>
-
-        {(coverage.testCaseCoverage < 95 || coverage.k6Coverage < 95) && (
-          <div className="coverage-recommendation">
-            <h5>💡 Recommendations:</h5>
-            <ul>
-              {coverage.testCaseCoverage < 95 && (
-                <li>Test case generation found {coverage.testCasesTotal}/66 possible combinations - some paths may be unreachable</li>
-              )}
-              {coverage.k6Coverage < 80 && (
-                <li>K6 script covers only {coverage.k6ScenariosTotal} scenarios - consider generating more comprehensive test scenarios</li>
-              )}
-              {!hasDynamicInputs && (
-                <li>Enable dynamic input generation to test all PIN/AMOUNT/RCMSISDN combinations</li>
-              )}
-              {getUniqueEndNodes().length <= 1 && (
-                <li>Verify all possible end scenarios (success, failures, exits) are reachable</li>
-              )}
-              {coverage.k6Coverage >= 80 && coverage.k6Coverage < 95 && (
-                <li>Good coverage! Consider adding edge cases and error scenarios for comprehensive testing</li>
-              )}
-            </ul>
-          </div>
-        )}
-
-        {coverage.testCaseCoverage >= 95 && coverage.k6Coverage >= 95 && (
-          <div className="coverage-success">
-            <h5>🎉 Excellent Coverage!</h5>
-            <p>Your test setup covers {coverage.testCaseCoverage}% of possible flows with comprehensive K6 scenarios. This should provide thorough load testing coverage.</p>
-          </div>
-        )}
-      </div>
-    );
   };
 
   // Generate input combinations based on K6 flow data structure
@@ -604,38 +714,735 @@ const K6TestGenerator = ({ nodes, edges, onClose }) => {
     setIsGenerating(true);
     
     try {
-      // Import the flow utils to export the current flow
-      const exportedNodes = exportToFlowFormat(nodes, edges);
-      console.log('Exported nodes:', exportedNodes);
-      console.log('Original nodes:', nodes);
-      console.log('Original edges:', edges);
+      console.log('🚀 Generating K6 script using new Canvas Graph structure...');
       
-      // Extract actual storeAttributes from the flow
-      const actualStoreAttributes = extractStoreAttributesFromFlow(nodes);
-      console.log('Actual storeAttributes found in flow:', actualStoreAttributes);
+      // Use the new graph-based generation logic inline with dynamic menus
+      const k6Script = generateK6ScriptFromGraph(nodes, edges, config, dynamicMenus);
       
-      // Create flow data object with nodes array
-      const flowData = {
-        nodes: exportedNodes,
-        edges: edges,
-        storeAttributes: actualStoreAttributes
-      };
+      setGeneratedScript(k6Script);
       
-      console.log('Flow data for K6:', flowData);
-      
-      // Generate K6 script based on the flow
-      const script = createK6Script(flowData, config);
-      
-      setGeneratedScript(script);
-      
-      // Also generate test cases for visualization
+      // Also generate test cases for visualization  
       generateAllTestCases();
+      
+      console.log('✅ K6 script generated successfully with new graph-based approach!');
+      
     } catch (error) {
-      console.error('Error generating K6 script:', error);
-      alert('Error generating K6 script. Please check your flow configuration.');
+      console.error('❌ Error generating K6 script:', error);
+      alert(`Error generating K6 script: ${error.message}\n\nPlease ensure your flow has:\n- At least one START node\n- At least one END node\n- Connected paths between nodes`);
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  // New graph-based K6 script generation
+  const generateK6ScriptFromGraph = (nodes, edges, config, dynamicMenusConfig = {}) => {
+    console.log('📊 Analyzing canvas graph structure...');
+    console.log('🎛️ Dynamic Menu Config received:', dynamicMenusConfig);
+    
+    // Store dynamic menus for assertion creation
+    const dynamicMenusForAssertions = dynamicMenusConfig;
+    // Find START and END nodes
+    const startNodes = nodes.filter(node => 
+      node.type === 'start' || (node.data && node.data.type === 'START')
+    );
+    
+    const endNodes = nodes.filter(node => 
+      node.type === 'end' || (node.data && node.data.type === 'END')
+    );
+    
+    if (startNodes.length === 0) {
+      throw new Error('No START nodes found. Please add at least one START node to your flow.');
+    }
+    
+    if (endNodes.length === 0) {
+      throw new Error('No END nodes found. Please add at least one END node to your flow.');
+    }
+    
+    console.log(`📍 Found ${startNodes.length} START nodes and ${endNodes.length} END nodes`);
+    
+    // Generate scenarios from all possible paths
+    const scenarios = [];
+    
+    startNodes.forEach(startNode => {
+      const paths = findPathsFromStart(startNode, nodes, edges);
+      console.log(`🛤️ Found ${paths.length} paths from START node ${startNode.id}`);
+      
+      paths.forEach((path, pathIndex) => {
+        const scenario = createScenarioFromPath(startNode, path, pathIndex, dynamicMenusForAssertions, edges);
+        scenarios.push(scenario);
+      });
+    });
+    
+    console.log(`✅ Generated ${scenarios.length} total test scenarios`);
+    
+    // Generate the K6 script
+    return createK6ScriptFromScenarios(scenarios, config);
+  };
+
+  // Find all paths from a START node to END nodes
+  const findPathsFromStart = (startNode, allNodes, allEdges) => {
+    const paths = [];
+    const maxDepth = 20;
+    
+    const traverse = (currentNode, currentPath, visited = new Set(), edgeInfo = null) => {
+      if (visited.has(currentNode.id) || currentPath.length > maxDepth) {
+        return;
+      }
+      
+      // Enhanced path node with edge information
+      const pathNode = {
+        ...currentNode,
+        edgeInfo: edgeInfo // Include edge information for conditional paths
+      };
+      
+      const newPath = [...currentPath, pathNode];
+      const newVisited = new Set(visited);
+      newVisited.add(currentNode.id);
+      
+      // Check if this is an END node
+      const nodeType = getNodeType(currentNode);
+      if (nodeType === 'END') {
+        paths.push(newPath);
+        return;
+      }
+      
+      // Find outgoing edges
+      const outgoingEdges = allEdges.filter(edge => edge.source === currentNode.id);
+      
+      if (outgoingEdges.length === 0) {
+        // Dead end - still add as path
+        paths.push(newPath);
+        return;
+      }
+      
+      // Follow each edge with sourceHandle information
+      outgoingEdges.forEach(edge => {
+        const nextNode = allNodes.find(n => n.id === edge.target);
+        if (nextNode) {
+          const edgeData = {
+            sourceHandle: edge.sourceHandle,
+            label: edge.label,
+            id: edge.id
+          };
+          traverse(nextNode, newPath, newVisited, edgeData);
+        }
+      });
+    };
+    
+    traverse(startNode, []);
+    return paths;
+  };
+
+  // Create scenario from a path
+  const createScenarioFromPath = (startNode, path, pathIndex, dynamicMenusRef = {}, allEdges = []) => {
+    const scenario = {
+      name: `Flow_${startNode.id}_Path_${pathIndex + 1}`,
+      startInput: getStartInput(startNode),
+      steps: [],
+      assertions: []
+    };
+    
+    // Enhanced assertion function that considers path context
+    const createAssertionFromNodeWithMenus = (node, dynamicMenusConfig = {}, edgeInfo = null) => {
+      const nodeType = getNodeType(node);
+      
+      // ACTION nodes are internal API calls - no user-facing assertions needed
+      if (nodeType === 'ACTION') {
+        return null;
+      }
+      
+      let expectedResponse = '';
+      
+      // For DYNAMIC-MENU nodes, check custom config first
+      if (nodeType === 'DYNAMIC-MENU') {
+        console.log(`🔍 DYNAMIC-MENU assertion for node ${node.id}:`);
+        console.log('  Available config:', dynamicMenusConfig[node.id]);
+        // Use user-provided dynamic menu content if available
+        if (dynamicMenusConfig[node.id] && dynamicMenusConfig[node.id].menuContent && dynamicMenusConfig[node.id].menuContent.trim()) {
+          expectedResponse = dynamicMenusConfig[node.id].menuContent;
+          console.log(`  ✅ Using custom content: "${expectedResponse}"`);
+        } else if (node.data && node.data.config && node.data.config.prompts && node.data.config.prompts.en) {
+          expectedResponse = node.data.config.prompts.en;
+          console.log(`  ℹ️ Using node prompt: "${expectedResponse}"`);
+        } else {
+          expectedResponse = 'Please select an option:';
+          console.log(`  ⚠️ Using default content: "${expectedResponse}"`);
+        }
+      } else if (nodeType === 'END' && edgeInfo && edgeInfo.sourceHandle) {
+        // Enhanced END node handling based on the edge that led to this node
+        console.log(`🔍 END node assertion for ${node.id} via edge: ${edgeInfo.sourceHandle}`);
+        
+        // Look up the correct response based on the specific condition path
+        const edgeHandle = edgeInfo.sourceHandle;
+        
+        // Map common conditional paths to their responses
+        if (edgeHandle.includes('condition1')) {
+          // Success condition - use node's prompt or success message
+          if (node.data && node.data.config && node.data.config.prompts && node.data.config.prompts.en) {
+            expectedResponse = node.data.config.prompts.en;
+            console.log(`  ✅ Using condition1 success message: "${expectedResponse}"`);
+          } else {
+            expectedResponse = 'Thank you for using our service! Transaction successful';
+            console.log(`  ✅ Using default success message: "${expectedResponse}"`);
+          }
+        } else if (edgeHandle.includes('NoMatch')) {
+          // Error/failure condition
+          if (node.data && node.data.config && node.data.config.prompts && node.data.config.prompts.en) {
+            expectedResponse = node.data.config.prompts.en;
+            console.log(`  ⚠️ Using NoMatch error message: "${expectedResponse}"`);
+          } else {
+            expectedResponse = 'Thank you for using our service! Service Not available';
+            console.log(`  ⚠️ Using default error message: "${expectedResponse}"`);
+          }
+        } else {
+          // General response path
+          if (node.data && node.data.config && node.data.config.prompts && node.data.config.prompts.en) {
+            expectedResponse = node.data.config.prompts.en;
+          } else {
+            expectedResponse = 'Thank you for using our service!';
+          }
+        }
+      } else if (node.data && node.data.config && node.data.config.prompts && node.data.config.prompts.en) {
+        expectedResponse = node.data.config.prompts.en;
+      } else {
+        // Fallback based on node type
+        switch (nodeType) {
+          case 'INPUT':
+            expectedResponse = 'Please enter your input:';
+            break;
+          case 'MENU':
+            expectedResponse = 'Please select an option:';
+            break;
+          case 'END':
+            expectedResponse = 'Thank you for using our service!';
+            break;
+          default:
+            expectedResponse = 'Please proceed';
+        }
+      }
+      
+      return {
+        expectedResponse: expectedResponse,
+        nodeType: nodeType,
+        assertionType: nodeType.toLowerCase()
+      };
+    };
+    
+    // Create steps from path (exclude START step since it's handled separately)
+    for (let i = 0; i < path.length - 1; i++) {
+      const currentNode = path[i];
+      const nextNode = path[i + 1];
+      
+      // Skip creating step for START node since it's handled in startInput
+      if (getNodeType(currentNode) === 'START') {
+        // Only create assertion for the next node after START
+        const assertion = createAssertionFromNodeWithMenus(nextNode, dynamicMenusRef, nextNode.edgeInfo);
+        if (assertion !== null) {
+          scenario.assertions.push(assertion);
+        }
+        continue;
+      }
+      
+      const step = createStepFromNodes(currentNode, nextNode, i, allEdges);
+      scenario.steps.push(step);
+      
+      // Create assertion for the next node (skip ACTION nodes) with edge context
+      const assertion = createAssertionFromNodeWithMenus(nextNode, dynamicMenusRef, nextNode.edgeInfo);
+      if (assertion !== null) {
+        scenario.assertions.push(assertion);
+      }
+    }
+    
+    return scenario;
+  };
+
+  // Create step from two connected nodes
+  const createStepFromNodes = (currentNode, nextNode, stepIndex, edges) => {
+    const nodeType = getNodeType(currentNode);
+    const nextNodeType = getNodeType(nextNode);
+    
+    let userInput = '';
+    let storeAttribute = null;
+    
+    switch (nodeType) {
+      case 'START':
+        userInput = getStartInput(currentNode);
+        break;
+      case 'MENU':
+        // Determine menu selection based on the target node from edges
+        const menuEdge = edges.find(e => e.source === currentNode.id && e.target === nextNode.id);
+        if (menuEdge && menuEdge.sourceHandle && menuEdge.sourceHandle.startsWith('option-')) {
+          userInput = menuEdge.sourceHandle.replace('option-', ''); // Extract option number
+        } else {
+          // Fallback: look at transitions to determine correct option
+          const transitions = currentNode.data?.config?.transitions || {};
+          const targetOption = Object.keys(transitions).find(key => 
+            transitions[key] === nextNode.id || transitions[key] === ''
+          );
+          userInput = targetOption || '1'; // Default to option 1 if not found
+        }
+        console.log(`🔧 MENU selection for ${currentNode.id} → ${nextNode.id}: option "${userInput}"`);
+        break;
+      case 'INPUT':
+        userInput = '*'; // Dynamic input
+        storeAttribute = currentNode.data?.config?.variableName || 
+                        currentNode.data?.config?.storeAttribute || null;
+        break;
+      case 'DYNAMIC-MENU':
+        userInput = '*'; // Dynamic selection
+        break;
+      case 'ACTION':
+        userInput = ''; // No user input for actions
+        break;
+      default:
+        userInput = '';
+    }
+    
+    return {
+      input: userInput,
+      storeAttribute: storeAttribute,
+      nodeType: nodeType,
+      nextNodeType: nextNodeType,
+      isActionNode: nextNodeType === 'ACTION'
+    };
+  };
+
+  // Create assertion from node (skip ACTION nodes as they are internal)
+  const createAssertionFromNode = (node) => {
+    const nodeType = getNodeType(node);
+    
+    // ACTION nodes are internal API calls - no user-facing assertions needed
+    if (nodeType === 'ACTION') {
+      return null;
+    }
+    
+    let expectedResponse = '';
+    
+    if (node.data && node.data.config && node.data.config.prompts && node.data.config.prompts.en) {
+      expectedResponse = node.data.config.prompts.en;
+    } else {
+      // Fallback based on node type
+      switch (nodeType) {
+        case 'INPUT':
+          expectedResponse = 'Please enter your input:';
+          break;
+        case 'MENU':
+          expectedResponse = 'Please select an option:';
+          break;
+        case 'DYNAMIC-MENU':
+          // Use user-provided dynamic menu content if available
+          if (dynamicMenus[node.id] && dynamicMenus[node.id].menuContent.trim()) {
+            expectedResponse = dynamicMenus[node.id].menuContent;
+          } else {
+            expectedResponse = 'Please select an option:';
+          }
+          break;
+        case 'END':
+          expectedResponse = 'Thank you for using our service!';
+          break;
+        default:
+          expectedResponse = 'Please proceed';
+      }
+    }
+    
+    return {
+      expectedResponse: expectedResponse,
+      nodeType: nodeType,
+      assertionType: nodeType.toLowerCase()
+    };
+  };
+
+  // Create the actual K6 script from scenarios
+  const createK6ScriptFromScenarios = (scenarios, config) => {
+    const loadStages = {
+      light: [
+        { duration: '30s', target: 5 },
+        { duration: '1m', target: 5 },
+        { duration: '30s', target: 0 }
+      ],
+      moderate: [
+        { duration: '1m', target: 20 },
+        { duration: '3m', target: 20 },
+        { duration: '1m', target: 50 },
+        { duration: '2m', target: 50 },
+        { duration: '1m', target: 0 }
+      ],
+      heavy: [
+        { duration: '2m', target: 50 },
+        { duration: '5m', target: 100 },
+        { duration: '2m', target: 200 },
+        { duration: '3m', target: 200 },
+        { duration: '2m', target: 0 }
+      ]
+    };
+
+    return `import http from 'k6/http';
+import { check, sleep } from 'k6';
+import { Rate, Trend } from 'k6/metrics';
+
+// Custom metrics for Canvas Graph USSD testing
+const errorRate = new Rate('errors');
+const sessionDuration = new Trend('session_duration');
+const flowCompletionRate = new Rate('flow_completion');
+const stepFailureRate = new Rate('step_failures');
+const dynamicInputSuccess = new Rate('dynamic_input_success');
+
+// Test configuration
+export const options = {
+  stages: ${JSON.stringify(loadStages[config.loadProfile] || loadStages.moderate, null, 4)},
+  
+  thresholds: {
+    http_req_duration: ['p(95)<3000'],
+    http_req_failed: ['rate<0.1'],
+    errors: ['rate<0.05'],
+    flow_completion: ['rate>0.9'],
+    step_failures: ['rate<0.05'],
+    dynamic_input_success: ['rate>0.95']
+  },
+
+  tags: {
+    testType: 'ussd_canvas_graph_test',
+    generator: 'k6-canvas-generator',
+    version: '${new Date().toISOString().split('T')[0]}'
+  }
+};
+
+// Configuration
+const CONFIG = {
+  BASE_URL: '${config.baseUrl}',
+  ENDPOINT: '${config.endpoint}',
+  LOGIN: '${config.login}',
+  PASSWORD: '${config.password}',
+  PHONE_PREFIX: '${config.phonePrefix}',
+  SESSION_ID_PREFIX: '${config.sessionIdPrefix}',
+};
+
+// Flow scenarios from Canvas Graph
+const FLOW_SCENARIOS = ${JSON.stringify(scenarios, null, 2)};
+
+// Utility functions
+function generatePhoneNumber() {
+  const suffix = Math.floor(Math.random() * 10000000).toString().padStart(7, '0');
+  return CONFIG.PHONE_PREFIX + suffix;
+}
+
+function generateSessionId() {
+  return CONFIG.SESSION_ID_PREFIX + Math.floor(Math.random() * 100000000);
+}
+
+// Generate dynamic values based on storeAttribute
+function generateDynamicValue(storeAttribute) {
+  if (!storeAttribute) return 'DEFAULT_VALUE';
+  
+  const attr = storeAttribute.toUpperCase();
+  
+  switch (true) {
+    case attr.includes('PIN') || attr.includes('PASSWORD'):
+      return ['1234', '5678', '1111', '0000', '9999'][Math.floor(Math.random() * 5)];
+    
+    case attr.includes('AMOUNT') || attr.includes('MONEY'):
+      return [10, 25, 50, 100, 200, 500, 1000, 2000, 5000][Math.floor(Math.random() * 9)].toString();
+    
+    case attr.includes('PHONE') || attr.includes('MSISDN'):
+      const prefixes = ['777', '778', '779', '770'];
+      const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+      const suffix = Math.floor(Math.random() * 10000000).toString().padStart(7, '0');
+      return prefix + suffix;
+    
+    case attr.includes('ACCOUNT'):
+      return Math.floor(100000000 + Math.random() * 900000000).toString();
+    
+    default:
+      return 'DEFAULT_VALUE';
+  }
+}
+
+function makeUSSDRequest(sessionId, msisdn, input, newRequest = 0) {
+  const url = \`\${CONFIG.BASE_URL}\${CONFIG.ENDPOINT}\`;
+  const params = {
+    LOGIN: CONFIG.LOGIN,
+    PASSWORD: CONFIG.PASSWORD,
+    SESSION_ID: sessionId,
+    MSISDN: msisdn,
+    NewRequest: newRequest,
+    INPUT: input
+  };
+  
+  const queryString = Object.entries(params)
+    .map(([key, value]) => \`\${key}=\${encodeURIComponent(value)}\`)
+    .join('&');
+  
+  const fullUrl = \`\${url}?\${queryString}\`;
+  
+  const startTime = Date.now();
+  const response = http.get(fullUrl);
+  const duration = Date.now() - startTime;
+  
+  console.log(\`[\${new Date().toISOString()}] \${input} -> \${response.status} (\${duration}ms)\`);
+  
+  return { response, duration };
+}
+
+function validateResponse(response, assertion, stepIndex, scenarioName) {
+  const tags = {
+    scenario: scenarioName,
+    step: stepIndex,
+    assertion_type: assertion.assertionType
+  };
+  
+  // Enhanced logging - show what we're comparing
+  console.log(\`🔍 Step \${stepIndex} Validation (\${assertion.nodeType}):\`);
+  console.log(\`📥 ACTUAL RESPONSE: "\${response.body ? response.body.trim() : 'NO BODY'}"\`);
+  console.log(\`📋 EXPECTED: "\${assertion.expectedResponse}"\`);
+  console.log(\`📊 Status: \${response.status}, Duration: \${response.timings.duration}ms\`);
+  
+  const checks = {
+    'status is 200': (r) => r.status === 200,
+    'response has body': (r) => r.body && r.body.length > 0,
+    'response time < 3000ms': (r) => r.timings.duration < 3000,
+  };
+  
+  if (response.body && assertion.expectedResponse) {
+    // Enhanced content validation for Canvas Graph flows
+    checks['content validation'] = (r) => {
+      const bodyLower = r.body.toLowerCase();
+      const expectedLower = assertion.expectedResponse.toLowerCase();
+      
+      console.log(\`🔍 Content Matching Check:\`);
+      console.log(\`  Body (lowercase): "\${bodyLower}"\`);
+      console.log(\`  Expected (lowercase): "\${expectedLower}"\`);
+      
+      // For menu nodes, check for menu structure
+      if (assertion.nodeType === 'MENU') {
+        const hasMenuNumbers = /\\d+\\./.test(r.body);
+        const containsExpected = bodyLower.includes(expectedLower);
+        const result = hasMenuNumbers || containsExpected;
+        
+        console.log(\`  Menu numbers found: \${hasMenuNumbers}\`);
+        console.log(\`  Contains expected text: \${containsExpected}\`);
+        console.log(\`  MENU validation result: \${result ? 'PASSED' : 'FAILED'}\`);
+        
+        return result;
+      }
+      
+      // For input nodes, check for input prompts
+      if (assertion.nodeType === 'INPUT') {
+        const inputKeywords = ['enter', 'input', 'provide'];
+        const hasInputKeyword = inputKeywords.some(keyword => bodyLower.includes(keyword));
+        const containsExpected = bodyLower.includes(expectedLower);
+        const result = hasInputKeyword || containsExpected;
+        
+        console.log(\`  Input keywords found: \${hasInputKeyword}\`);
+        console.log(\`  Contains expected text: \${containsExpected}\`);
+        console.log(\`  INPUT validation result: \${result ? 'PASSED' : 'FAILED'}\`);
+        
+        return result;
+      }
+      
+      // For end nodes, enhanced validation with dynamic content handling
+      if (assertion.nodeType === 'END') {
+        console.log(\`🔍 END Node Dynamic Content Validation:\`);
+        console.log(\`  Expected template: "\${assertion.expectedResponse}"\`);
+        console.log(\`  Actual response: "\${r.body}"\`);
+        
+        // Handle dynamic content in END nodes (like transaction IDs)
+        const actualBody = r.body.toLowerCase();
+        const expectedText = assertion.expectedResponse.toLowerCase();
+        
+        // Extract static parts by removing dynamic placeholders
+        const staticParts = expectedText
+          .split(/:[a-zA-Z_][a-zA-Z0-9_]*/)  // Split on :variableName patterns
+          .filter(part => part.trim().length > 3)  // Only keep meaningful parts (not just "with", etc.)
+          .map(part => part.trim());
+        
+        console.log(\`  Static parts to find: [\${staticParts.join(', ')}]\`);
+        
+        // Check if key static parts are present in the response
+        const keyPartsFound = staticParts.filter(part => 
+          actualBody.includes(part)
+        );
+        
+        console.log(\`  Parts found: [\${keyPartsFound.join(', ')}]\`);
+        
+        // Success if most key parts are found (flexible matching)
+        const matchPercentage = staticParts.length > 0 ? (keyPartsFound.length / staticParts.length) : 0;
+        
+        if (matchPercentage >= 0.7 && keyPartsFound.length > 0) { // 70% match threshold
+          console.log(\`✅ END node validation: Found \${keyPartsFound.length}/\${staticParts.length} key parts (\${Math.round(matchPercentage * 100)}%) - PASSED\`);
+          return true;
+        }
+        
+        // Fallback: check for completion keywords
+        const completionKeywords = ['thank', 'success', 'complete', 'transaction'];
+        const foundCompletionKeywords = completionKeywords.filter(keyword => actualBody.includes(keyword));
+        const hasCompletionKeyword = foundCompletionKeywords.length > 0;
+        
+        if (hasCompletionKeyword) {
+          console.log(\`✅ END node validation: Found completion indicators [\${foundCompletionKeywords.join(', ')}] - PASSED\`);
+          return true;
+        }
+        
+        console.log(\`❌ END node validation: Only found \${keyPartsFound.length}/\${staticParts.length} key parts (\${Math.round(matchPercentage * 100)}%) - FAILED\`);
+        return false;
+      }
+      
+      // For dynamic menu responses
+      if (assertion.nodeType === 'DYNAMIC-MENU') {
+        const hasMenuNumbers = /\\d+\\./.test(r.body);
+        const containsExpected = bodyLower.includes(expectedLower);
+        const result = hasMenuNumbers || containsExpected;
+        
+        console.log(\`  Dynamic menu numbers found: \${hasMenuNumbers}\`);
+        console.log(\`  Contains expected text: \${containsExpected}\`);
+        console.log(\`  DYNAMIC-MENU validation result: \${result ? 'PASSED' : 'FAILED'}\`);
+        
+        return result;
+      }
+      
+      // General content matching
+      const result = bodyLower.includes(expectedLower);
+      console.log(\`  General content match: \${result ? 'PASSED' : 'FAILED'}\`);
+      return result;
+    };
+    
+    // Check for error indicators
+    const errorKeywords = ['error', 'invalid', 'failed', 'wrong', 'denied'];
+    checks['no error indicators'] = (r) => {
+      const foundErrors = errorKeywords.filter(keyword => r.body.toLowerCase().includes(keyword));
+      const hasErrors = foundErrors.length > 0;
+      
+      if (hasErrors) {
+        console.log(\`❌ Error indicators found: [\${foundErrors.join(', ')}]\`);
+      } else {
+        console.log(\`✅ No error indicators found\`);
+      }
+      
+      return !hasErrors;
+    };
+  }
+  
+  const result = check(response, checks, tags);
+  
+  // Final validation summary
+  console.log(\`📊 Validation Summary for Step \${stepIndex}:\`);
+  console.log(\`  Overall Result: \${result ? '✅ PASSED' : '❌ FAILED'}\`);
+  console.log(\`  Node Type: \${assertion.nodeType}\`);
+  console.log(\`  Assertion Type: \${assertion.assertionType}\`);
+  console.log(\`─────────────────────────────────────\`);
+  
+  return result;
+}
+
+export default function () {
+  const phoneNumber = generatePhoneNumber();
+  const sessionId = generateSessionId();
+  
+  // Select random scenario
+  const scenario = FLOW_SCENARIOS[Math.floor(Math.random() * FLOW_SCENARIOS.length)];
+  
+  console.log(\`🚀 Starting Canvas Graph scenario: \${scenario.name} for \${phoneNumber}\`);
+  
+  const sessionStart = Date.now();
+  let flowCompleted = false;
+  
+  const sessionTags = {
+    scenario_name: scenario.name,
+    phone_number: phoneNumber.substring(0, 3) + 'XXX'
+  };
+  
+  try {
+    // Step 1: Initiate USSD session
+    const { response: startResponse } = makeUSSDRequest(
+      sessionId, 
+      phoneNumber, 
+      scenario.startInput, 
+      1
+    );
+    
+    // Validate start response
+    if (scenario.assertions.length > 0) {
+      const startAssertion = scenario.assertions[0];
+      if (!validateResponse(startResponse, startAssertion, 0, scenario.name)) {
+        errorRate.add(1, sessionTags);
+        stepFailureRate.add(1, { ...sessionTags, step: 0 });
+        return;
+      }
+    }
+    
+    sleep(1 + Math.random() * 2);
+    
+    // Step 2: Process each step in the scenario (excluding START step)
+    let assertionIndex = 1; // ✅ Start at 1 since assertion[0] was used for start response
+
+    for (let i = 0; i < scenario.steps.length; i++) {
+      const step = scenario.steps[i];
+
+      let processedInput = step.input;
+
+      // Handle dynamic inputs
+      if (step.input === '*' && step.storeAttribute) {
+        processedInput = generateDynamicValue(step.storeAttribute);
+        console.log(\`🔄 Dynamic input: \${step.storeAttribute} -> \${processedInput}\`);
+        dynamicInputSuccess.add(1, { ...sessionTags, attribute: step.storeAttribute });
+      }
+
+      // Skip ACTION nodes in user flow (they process automatically)
+      if (step.nodeType === 'ACTION') {
+        console.log(\`⚙️ Processing ACTION node automatically\`);
+        continue; // ✅ Skip ACTION nodes but don't advance assertionIndex
+      }
+
+      const { response } = makeUSSDRequest(sessionId, phoneNumber, processedInput, 0);
+
+      // Validate response if assertion exists for this step's target node
+      if (assertionIndex < scenario.assertions.length) {
+        const assertion = scenario.assertions[assertionIndex];
+        console.log(\`🔍 Using assertion[\${assertionIndex}] for step \${i + 1}: \${assertion.nodeType} - "\${assertion.expectedResponse}"\`);
+        if (assertion && !validateResponse(response, assertion, i + 1, scenario.name)) {
+          errorRate.add(1, { ...sessionTags, step: i + 1 });
+          stepFailureRate.add(1, { ...sessionTags, step: i + 1 });
+          console.log(\`❌ Step \${i + 1} failed validation\`);
+          break;
+        }
+        assertionIndex++; // ✅ Only advance after processing a non-ACTION step
+      }      // Check if this is the last step
+      if (i === scenario.steps.length - 1) {
+        flowCompleted = true;
+        console.log(\`✅ Canvas Graph flow completed successfully for \${phoneNumber}\`);
+      }
+      
+      sleep(0.5 + Math.random() * 1.5);
+    }
+    
+    flowCompletionRate.add(flowCompleted ? 1 : 0, sessionTags);
+    sessionDuration.add(Date.now() - sessionStart, sessionTags);
+    
+  } catch (error) {
+    console.error(\`Error in Canvas Graph scenario \${scenario.name}:\`, error.message);
+    errorRate.add(1, sessionTags);
+    flowCompletionRate.add(0, sessionTags);
+  }
+  
+  sleep(2 + Math.random() * 3);
+}
+
+export function setup() {
+  console.log('🚀 Canvas Graph USSD Load Test Started');
+  console.log(\`Target: \${CONFIG.BASE_URL}\${CONFIG.ENDPOINT}\`);
+  console.log(\`Scenarios: \${FLOW_SCENARIOS.length}\`);
+  console.log(\`Graph-based flow testing with dynamic inputs\`);
+  
+  return {
+    timestamp: new Date().toISOString(),
+    scenarios: FLOW_SCENARIOS.length
+  };
+}
+
+export function teardown(data) {
+  console.log('📊 Canvas Graph Load Test Completed');
+  console.log(\`Started at: \${data.timestamp}\`);
+  console.log(\`Scenarios tested: \${data.scenarios}\`);
+}`;
   };
 
   const createK6Script = (flowData, config) => {
@@ -1974,6 +2781,120 @@ export function teardown(data) {
               )}
             </div>
           </div>
+
+          {/* Dynamic Menu Configuration Section */}
+          {Object.keys(dynamicMenus).length > 0 && (
+            <div className="config-section">
+              <h3>🎛️ Dynamic Menu Configuration</h3>
+              <div style={{
+                background: '#f0f9ff',
+                padding: '16px',
+                borderRadius: '8px',
+                marginBottom: '16px',
+                border: '1px solid #e0f2fe'
+              }}>
+                <p style={{ margin: '0 0 8px 0', fontSize: '14px', color: '#0369a1' }}>
+                  📍 <strong>{Object.keys(dynamicMenus).length} DYNAMIC-MENU node(s) detected</strong>
+                </p>
+                <p style={{ margin: 0, fontSize: '13px', color: '#0369a1' }}>
+                  Configure the actual menu content for better assertion accuracy in load tests.
+                </p>
+              </div>
+              
+              {Object.entries(dynamicMenus).map(([nodeId, menuConfig]) => (
+                <div key={nodeId} style={{
+                  background: '#fefefe',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  padding: '16px',
+                  marginBottom: '16px'
+                }}>
+                  <h4 style={{
+                    margin: '0 0 12px 0',
+                    color: '#374151',
+                    fontSize: '16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <span style={{
+                      background: '#ddd6fe',
+                      color: '#5b21b6',
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      fontWeight: 'bold'
+                    }}>
+                      DYNAMIC-MENU
+                    </span>
+                    {menuConfig.nodeName}
+                  </h4>
+                  
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{
+                      display: 'block',
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      marginBottom: '6px',
+                      color: '#374151'
+                    }}>
+                      Menu Content (for assertion):
+                    </label>
+                    <textarea
+                      value={menuConfig.menuContent}
+                      onChange={(e) => updateDynamicMenuContent(nodeId, e.target.value)}
+                      placeholder={menuConfig.sampleContent}
+                      style={{
+                        width: '100%',
+                        minHeight: '100px',
+                        padding: '12px',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        fontFamily: 'monospace',
+                        resize: 'vertical'
+                      }}
+                    />
+                    <small style={{
+                      display: 'block',
+                      marginTop: '6px',
+                      color: '#6b7280',
+                      fontSize: '12px'
+                    }}>
+                      💡 Enter the exact menu options as they appear in USSD responses.
+                      Example: "1.Electricity Board\n2.Water Supply Dept\n3.Mobile Recharge"
+                    </small>
+                  </div>
+                  
+                  {!menuConfig.menuContent.trim() && (
+                    <div style={{
+                      background: '#fef3c7',
+                      border: '1px solid #f59e0b',
+                      borderRadius: '6px',
+                      padding: '10px',
+                      fontSize: '13px',
+                      color: '#92400e'
+                    }}>
+                      ⚠️ <strong>No content configured</strong> - Will use default assertion: "Please select an option:"
+                    </div>
+                  )}
+                  
+                  {menuConfig.menuContent.trim() && (
+                    <div style={{
+                      background: '#d1fae5',
+                      border: '1px solid #10b981',
+                      borderRadius: '6px',
+                      padding: '10px',
+                      fontSize: '13px',
+                      color: '#065f46'
+                    }}>
+                      ✅ <strong>Custom content configured</strong> - K6 tests will assert against your menu content
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           
           <div className="config-section">
             <h3>Flow Analysis</h3>
