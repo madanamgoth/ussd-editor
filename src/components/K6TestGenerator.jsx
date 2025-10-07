@@ -17,6 +17,16 @@ const K6TestGenerator = ({ nodes, edges, onClose }) => {
     testDuration: '5m',
     maxUsers: 50,
     rampUpTime: '1m',
+    // TPS Configuration
+    testMode: 'vu', // 'vu' or 'tps'
+    tpsConfig: {
+      targetTPS: 50,
+      duration: '5m',
+      avgTransactionTime: 2,
+      thinkTime: 1,
+      maxVUs: 500,
+      testType: 'moderate_tps'
+    },
     // Dynamic input configuration
     dynamicInputs: {
       enableSmartInputs: true,
@@ -210,6 +220,28 @@ const K6TestGenerator = ({ nodes, edges, onClose }) => {
   React.useEffect(() => {
     detectDynamicMenus();
   }, [nodes]);
+
+  // Auto-calculate TPS metrics when TPS config changes
+  React.useEffect(() => {
+    if (config.testMode === 'tps') {
+      const { targetTPS, avgTransactionTime, thinkTime, maxVUs } = config.tpsConfig;
+      const totalTime = avgTransactionTime + thinkTime;
+      const requiredVUs = Math.ceil(targetTPS * totalTime);
+      const finalVUs = Math.min(requiredVUs, maxVUs);
+      const actualTPS = finalVUs / totalTime;
+      
+      // Auto-update TPS config with calculated values
+      setConfig(prev => ({
+        ...prev,
+        tpsConfig: {
+          ...prev.tpsConfig,
+          calculatedVUs: finalVUs,
+          actualTPS: actualTPS,
+          isVULimited: requiredVUs > maxVUs
+        }
+      }));
+    }
+  }, [config.testMode, config.tpsConfig.targetTPS, config.tpsConfig.avgTransactionTime, config.tpsConfig.thinkTime, config.tpsConfig.maxVUs]);
 
   // Generate all possible test case combinations using new graph-based approach
   const generateAllTestCases = () => {
@@ -1054,27 +1086,84 @@ const K6TestGenerator = ({ nodes, edges, onClose }) => {
 
   // Create the actual K6 script from scenarios
   const createK6ScriptFromScenarios = (scenarios, config) => {
-    const loadStages = {
-      light: [
-        { duration: '30s', target: 5 },
-        { duration: '1m', target: 5 },
-        { duration: '30s', target: 0 }
-      ],
-      moderate: [
-        { duration: '1m', target: 20 },
-        { duration: '3m', target: 20 },
-        { duration: '1m', target: 50 },
-        { duration: '2m', target: 50 },
-        { duration: '1m', target: 0 }
-      ],
-      heavy: [
-        { duration: '2m', target: 50 },
-        { duration: '5m', target: 100 },
-        { duration: '2m', target: 200 },
-        { duration: '3m', target: 200 },
-        { duration: '2m', target: 0 }
-      ]
-    };
+    let testConfiguration;
+    
+    if (config.testMode === 'tps') {
+      // TPS-based configuration
+      const { targetTPS, duration, avgTransactionTime, thinkTime, maxVUs } = config.tpsConfig;
+      
+      // Calculate required VUs for target TPS
+      const transactionTimeSeconds = avgTransactionTime;
+      const thinkTimeSeconds = thinkTime;
+      const totalCycleTime = transactionTimeSeconds + thinkTimeSeconds;
+      const calculatedVUs = Math.ceil(targetTPS * totalCycleTime);
+      const finalVUs = Math.min(calculatedVUs, maxVUs);
+      
+      // TPS-focused stages
+      const tpsStages = [
+        { duration: '30s', target: Math.ceil(finalVUs * 0.1) }, // Warm-up to 10%
+        { duration: '1m', target: Math.ceil(finalVUs * 0.5) },  // Ramp to 50%
+        { duration: '30s', target: finalVUs },                   // Reach target VUs
+        { duration: duration, target: finalVUs },                // Maintain target
+        { duration: '30s', target: 0 }                          // Cool down
+      ];
+      
+      testConfiguration = {
+        stages: tpsStages,
+        tpsMode: true,
+        targetTPS: targetTPS,
+        avgTransactionTime: transactionTimeSeconds,
+        thinkTime: thinkTimeSeconds,
+        calculatedVUs: finalVUs,
+        thresholds: {
+          http_req_duration: ['p(95)<3000'],
+          http_req_failed: ['rate<0.1'],
+          errors: ['rate<0.05'],
+          flow_completion: ['rate>0.9'],
+          step_failures: ['rate<0.05'],
+          dynamic_input_success: ['rate>0.95'],
+          // TPS-specific thresholds
+          http_reqs: [`rate>=${targetTPS * 0.95}`], // At least 95% of target TPS
+          'http_req_duration{type:transaction}': ['avg<' + (transactionTimeSeconds * 1000)]
+        }
+      };
+    } else {
+      // VU-based configuration (original)
+      const loadStages = {
+        light: [
+          { duration: '30s', target: 5 },
+          { duration: '1m', target: 5 },
+          { duration: '30s', target: 0 }
+        ],
+        moderate: [
+          { duration: '1m', target: 20 },
+          { duration: '3m', target: 20 },
+          { duration: '1m', target: 50 },
+          { duration: '2m', target: 50 },
+          { duration: '1m', target: 0 }
+        ],
+        heavy: [
+          { duration: '2m', target: 50 },
+          { duration: '5m', target: 100 },
+          { duration: '2m', target: 200 },
+          { duration: '3m', target: 200 },
+          { duration: '2m', target: 0 }
+        ]
+      };
+      
+      testConfiguration = {
+        stages: loadStages[config.loadProfile] || loadStages.moderate,
+        tpsMode: false,
+        thresholds: {
+          http_req_duration: ['p(95)<3000'],
+          http_req_failed: ['rate<0.1'],
+          errors: ['rate<0.05'],
+          flow_completion: ['rate>0.9'],
+          step_failures: ['rate<0.05'],
+          dynamic_input_success: ['rate>0.95']
+        }
+      };
+    }
 
     return `import http from 'k6/http';
 import { check, sleep } from 'k6';
@@ -1086,23 +1175,23 @@ const sessionDuration = new Trend('session_duration');
 const flowCompletionRate = new Rate('flow_completion');
 const stepFailureRate = new Rate('step_failures');
 const dynamicInputSuccess = new Rate('dynamic_input_success');
+${testConfiguration.tpsMode ? `
+// TPS-specific metrics
+const tpsMetric = new Rate('tps_achieved');
+const transactionTiming = new Trend('transaction_duration');` : ''}
 
 // Test configuration
 export const options = {
-  stages: ${JSON.stringify(loadStages[config.loadProfile] || loadStages.moderate, null, 4)},
+  stages: ${JSON.stringify(testConfiguration.stages, null, 4)},
   
-  thresholds: {
-    http_req_duration: ['p(95)<3000'],
-    http_req_failed: ['rate<0.1'],
-    errors: ['rate<0.05'],
-    flow_completion: ['rate>0.9'],
-    step_failures: ['rate<0.05'],
-    dynamic_input_success: ['rate>0.95']
-  },
+  thresholds: ${JSON.stringify(testConfiguration.thresholds, null, 4)},
 
   tags: {
     testType: 'ussd_canvas_graph_test',
     generator: 'k6-canvas-generator',
+    mode: '${testConfiguration.tpsMode ? 'tps' : 'vu'}',
+    ${testConfiguration.tpsMode ? `targetTPS: ${testConfiguration.targetTPS},
+    calculatedVUs: ${testConfiguration.calculatedVUs},` : ''}
     version: '${new Date().toISOString().split('T')[0]}'
   }
 };
@@ -1115,10 +1204,48 @@ const CONFIG = {
   PASSWORD: '${config.password}',
   PHONE_PREFIX: '${config.phonePrefix}',
   SESSION_ID_PREFIX: '${config.sessionIdPrefix}',
+  
+  // Timing configuration based on test mode
+  ${testConfiguration.tpsMode ? `TPS_MODE: true,
+  TARGET_TPS: ${testConfiguration.targetTPS},
+  AVG_TRANSACTION_TIME: ${testConfiguration.avgTransactionTime},
+  THINK_TIME: ${testConfiguration.thinkTime},
+  CALCULATED_VUS: ${testConfiguration.calculatedVUs}` : `TPS_MODE: false,
+  VU_THINK_TIME_MIN: 1,
+  VU_THINK_TIME_MAX: 2,
+  VU_STEP_DELAY_MIN: 0.5,
+  VU_STEP_DELAY_MAX: 1.5,
+  VU_SESSION_DELAY_MIN: 2,
+  VU_SESSION_DELAY_MAX: 3`}
 };
 
 // Flow scenarios from Canvas Graph
 const FLOW_SCENARIOS = ${JSON.stringify(scenarios, null, 2)};
+
+// Timing helper functions
+function getThinkTime() {
+  if (CONFIG.TPS_MODE) {
+    return CONFIG.THINK_TIME;
+  } else {
+    return CONFIG.VU_THINK_TIME_MIN + Math.random() * (CONFIG.VU_THINK_TIME_MAX - CONFIG.VU_THINK_TIME_MIN);
+  }
+}
+
+function getStepDelay() {
+  if (CONFIG.TPS_MODE) {
+    return CONFIG.THINK_TIME * 0.25; // Quarter of think time for TPS step delays
+  } else {
+    return CONFIG.VU_STEP_DELAY_MIN + Math.random() * (CONFIG.VU_STEP_DELAY_MAX - CONFIG.VU_STEP_DELAY_MIN);
+  }
+}
+
+function getSessionDelay() {
+  if (CONFIG.TPS_MODE) {
+    return CONFIG.THINK_TIME;
+  } else {
+    return CONFIG.VU_SESSION_DELAY_MIN + Math.random() * (CONFIG.VU_SESSION_DELAY_MAX - CONFIG.VU_SESSION_DELAY_MIN);
+  }
+}
 
 // Utility functions
 function generatePhoneNumber() {
@@ -1343,11 +1470,13 @@ export default function () {
   console.log(\`🚀 Starting Canvas Graph scenario: \${scenario.name} for \${phoneNumber}\`);
   
   const sessionStart = Date.now();
+  const transactionStart = Date.now();
   let flowCompleted = false;
   
   const sessionTags = {
     scenario_name: scenario.name,
-    phone_number: phoneNumber.substring(0, 3) + 'XXX'
+    phone_number: phoneNumber.substring(0, 3) + 'XXX',
+    test_mode: CONFIG.TPS_MODE ? 'tps' : 'vu'
   };
   
   try {
@@ -1369,7 +1498,7 @@ export default function () {
       }
     }
     
-    sleep(1 + Math.random() * 2);
+    sleep(getThinkTime());
     
     // Step 2: Process each step in the scenario (excluding START step)
     let assertionIndex = 1; // ✅ Start at 1 since assertion[0] was used for start response
@@ -1411,11 +1540,21 @@ export default function () {
         console.log(\`✅ Canvas Graph flow completed successfully for \${phoneNumber}\`);
       }
       
-      sleep(0.5 + Math.random() * 1.5);
+      sleep(getStepDelay());
     }
     
     flowCompletionRate.add(flowCompleted ? 1 : 0, sessionTags);
     sessionDuration.add(Date.now() - sessionStart, sessionTags);
+    
+    // TPS-specific metrics
+    if (CONFIG.TPS_MODE) {
+      const transactionDuration = Date.now() - transactionStart;
+      transactionTiming.add(transactionDuration, sessionTags);
+      tpsMetric.add(1, sessionTags);
+      
+      // Log TPS performance
+      console.log(\`📊 TPS Transaction completed in \${transactionDuration}ms (target: \${CONFIG.AVG_TRANSACTION_TIME * 1000}ms)\`);
+    }
     
   } catch (error) {
     console.error(\`Error in Canvas Graph scenario \${scenario.name}:\`, error.message);
@@ -1423,7 +1562,7 @@ export default function () {
     flowCompletionRate.add(0, sessionTags);
   }
   
-  sleep(2 + Math.random() * 3);
+  sleep(getSessionDelay());
 }
 
 export function setup() {
@@ -1432,9 +1571,18 @@ export function setup() {
   console.log(\`Scenarios: \${FLOW_SCENARIOS.length}\`);
   console.log(\`Graph-based flow testing with dynamic inputs\`);
   
+  if (CONFIG.TPS_MODE) {
+    console.log(\`🎯 TPS Mode: Target \${CONFIG.TARGET_TPS} TPS with \${CONFIG.CALCULATED_VUS} VUs\`);
+    console.log(\`⏱️ Transaction Time: \${CONFIG.AVG_TRANSACTION_TIME}s, Think Time: \${CONFIG.THINK_TIME}s\`);
+  } else {
+    console.log(\`👥 VU Mode: Traditional virtual user simulation\`);
+  }
+  
   return {
     timestamp: new Date().toISOString(),
-    scenarios: FLOW_SCENARIOS.length
+    scenarios: FLOW_SCENARIOS.length,
+    testMode: CONFIG.TPS_MODE ? 'tps' : 'vu',
+    targetTPS: CONFIG.TPS_MODE ? CONFIG.TARGET_TPS : 'N/A'
   };
 }
 
@@ -1442,6 +1590,10 @@ export function teardown(data) {
   console.log('📊 Canvas Graph Load Test Completed');
   console.log(\`Started at: \${data.timestamp}\`);
   console.log(\`Scenarios tested: \${data.scenarios}\`);
+  console.log(\`Test Mode: \${data.testMode}\`);
+  if (data.testMode === 'tps') {
+    console.log(\`Target TPS: \${data.targetTPS}\`);
+  }
 }`;
   };
 
@@ -1969,7 +2121,7 @@ export default function () {
       return;
     }
     
-    sleep(1 + Math.random() * 2);
+    sleep(getThinkTime());
     
     // Process each input in the flow with realistic dynamic data
     const flowContext = {
@@ -2071,7 +2223,7 @@ export default function () {
         }
       }
       
-      sleep(0.5 + Math.random() * 1.5);
+      sleep(getStepDelay());
     }
     
     if (!flowCompleted && stepCount > 0) {
@@ -2083,7 +2235,7 @@ export default function () {
     
     // Start new session after completion
     if (flowCompleted) {
-      sleep(2 + Math.random() * 3);
+      sleep(getSessionDelay());
       // Recursively start new flow (simulating continuous usage)
       if (Math.random() < 0.7) { // 70% chance to start new flow
         console.log(\`🔄 Starting new flow for \${phoneNumber}\`);
@@ -2098,7 +2250,7 @@ export default function () {
     businessMetrics.failed_transactions.add(1, { ...sessionTags, error_type: 'exception' });
   }
   
-  sleep(2 + Math.random() * 3);
+  sleep(getSessionDelay());
 }
 
 export function setup() {
@@ -2472,6 +2624,237 @@ export function teardown(data) {
                 </div>
               ))}
             </div>
+          </div>
+          
+          {/* TPS Configuration Section */}
+          <div className="config-section">
+            <h3>🎯 Test Mode Configuration</h3>
+            <div className="test-mode-selection">
+              <div className="mode-buttons">
+                <button 
+                  className={`mode-btn ${config.testMode === 'vu' ? 'active' : ''}`}
+                  onClick={() => setConfig(prev => ({ ...prev, testMode: 'vu' }))}
+                >
+                  <div className="mode-icon">👥</div>
+                  <div className="mode-info">
+                    <h4>Virtual Users (VU)</h4>
+                    <p>Simulate concurrent users</p>
+                  </div>
+                </button>
+                <button 
+                  className={`mode-btn ${config.testMode === 'tps' ? 'active' : ''}`}
+                  onClick={() => setConfig(prev => ({ ...prev, testMode: 'tps' }))}
+                >
+                  <div className="mode-icon">⚡</div>
+                  <div className="mode-info">
+                    <h4>Transactions/Second (TPS)</h4>
+                    <p>Benchmark system throughput</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+            
+            {config.testMode === 'tps' && (
+              <div className="tps-configuration">
+                <div className="tps-presets">
+                  <h4>📊 TPS Test Profiles</h4>
+                  <div className="tps-preset-grid">
+                    {[
+                      { key: 'low_tps', name: 'Low TPS', targetTPS: 10, duration: '2m', icon: '🐌', color: '#10B981' },
+                      { key: 'moderate_tps', name: 'Moderate TPS', targetTPS: 50, duration: '5m', icon: '🚶', color: '#3B82F6' },
+                      { key: 'high_tps', name: 'High TPS', targetTPS: 100, duration: '10m', icon: '🏃', color: '#F59E0B' },
+                      { key: 'stress_tps', name: 'Stress TPS', targetTPS: 200, duration: '15m', icon: '🔥', color: '#EF4444' },
+                      { key: 'custom_tps', name: 'Custom TPS', targetTPS: 0, duration: '10m', icon: '⚙️', color: '#6B7280' }
+                    ].map(preset => (
+                      <div
+                        key={preset.key}
+                        className={`tps-preset-card ${config.tpsConfig.testType === preset.key ? 'selected' : ''}`}
+                        onClick={() => setConfig(prev => ({
+                          ...prev,
+                          tpsConfig: {
+                            ...prev.tpsConfig,
+                            testType: preset.key,
+                            targetTPS: preset.targetTPS,
+                            duration: preset.duration
+                          }
+                        }))}
+                        style={{ borderColor: preset.color }}
+                      >
+                        <div className="tps-preset-icon" style={{ color: preset.color }}>
+                          {preset.icon}
+                        </div>
+                        <div className="tps-preset-info">
+                          <h5>{preset.name}</h5>
+                          {preset.key !== 'custom_tps' && (
+                            <div className="tps-preset-stats">
+                              <span>TPS: {preset.targetTPS}</span>
+                              <span>Duration: {preset.duration}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                {config.tpsConfig.testType === 'custom_tps' && (
+                  <div className="custom-tps-config">
+                    <h4>⚙️ Custom TPS Configuration</h4>
+                    <div className="tps-config-grid">
+                      <div className="config-field">
+                        <label>Target TPS:</label>
+                        <input
+                          type="number"
+                          value={config.tpsConfig.targetTPS}
+                          onChange={(e) => setConfig(prev => ({
+                            ...prev,
+                            tpsConfig: { ...prev.tpsConfig, targetTPS: parseInt(e.target.value) }
+                          }))}
+                          min="1"
+                          max="1000"
+                        />
+                      </div>
+                      <div className="config-field">
+                        <label>Test Duration:</label>
+                        <select
+                          value={config.tpsConfig.duration}
+                          onChange={(e) => setConfig(prev => ({
+                            ...prev,
+                            tpsConfig: { ...prev.tpsConfig, duration: e.target.value }
+                          }))}
+                        >
+                          <option value="1m">1 minute</option>
+                          <option value="2m">2 minutes</option>
+                          <option value="5m">5 minutes</option>
+                          <option value="10m">10 minutes</option>
+                          <option value="15m">15 minutes</option>
+                          <option value="30m">30 minutes</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                <div className="advanced-tps-config">
+                  <h4>🔧 Advanced TPS Configuration</h4>
+                  <div className="tps-config-grid">
+                    <div className="config-field">
+                      <label>
+                        Avg Transaction Time (seconds):
+                        <span className="help-text">Time for one complete USSD flow</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={config.tpsConfig.avgTransactionTime}
+                        onChange={(e) => setConfig(prev => ({
+                          ...prev,
+                          tpsConfig: { ...prev.tpsConfig, avgTransactionTime: parseFloat(e.target.value) }
+                        }))}
+                        min="0.1"
+                        max="10"
+                      />
+                    </div>
+                    <div className="config-field">
+                      <label>
+                        Think Time (seconds):
+                        <span className="help-text">Delay between user actions</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={config.tpsConfig.thinkTime}
+                        onChange={(e) => setConfig(prev => ({
+                          ...prev,
+                          tpsConfig: { ...prev.tpsConfig, thinkTime: parseFloat(e.target.value) }
+                        }))}
+                        min="0"
+                        max="10"
+                      />
+                    </div>
+                    <div className="config-field">
+                      <label>
+                        Max VUs:
+                        <span className="help-text">Maximum virtual users allowed</span>
+                      </label>
+                      <input
+                        type="number"
+                        value={config.tpsConfig.maxVUs}
+                        onChange={(e) => setConfig(prev => ({
+                          ...prev,
+                          tpsConfig: { ...prev.tpsConfig, maxVUs: parseInt(e.target.value) }
+                        }))}
+                        min="1"
+                        max="2000"
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                {(() => {
+                  const targetTPS = config.tpsConfig.testType === 'custom_tps' ? config.tpsConfig.targetTPS : 
+                    config.tpsConfig.testType === 'low_tps' ? 10 :
+                    config.tpsConfig.testType === 'moderate_tps' ? 50 :
+                    config.tpsConfig.testType === 'high_tps' ? 100 :
+                    config.tpsConfig.testType === 'stress_tps' ? 200 : 50;
+                  
+                  const totalTime = config.tpsConfig.avgTransactionTime + config.tpsConfig.thinkTime;
+                  const requiredVUs = Math.ceil(targetTPS * totalTime);
+                  const finalVUs = Math.min(requiredVUs, config.tpsConfig.maxVUs);
+                  const actualTPS = finalVUs / totalTime;
+                  const isVULimited = requiredVUs > config.tpsConfig.maxVUs;
+                  
+                  return (
+                    <div className="tps-analysis">
+                      <h4>📊 TPS Analysis Results</h4>
+                      <div className="tps-analysis-grid">
+                        <div className="analysis-card">
+                          <h5>🎯 Target TPS</h5>
+                          <div className="metric-value">{targetTPS}</div>
+                          <div className="metric-unit">transactions/sec</div>
+                        </div>
+                        <div className="analysis-card">
+                          <h5>👥 Required VUs</h5>
+                          <div className="metric-value">{finalVUs}</div>
+                          <div className="metric-unit">virtual users</div>
+                          {isVULimited && <div className="warning">⚠️ VU limited</div>}
+                        </div>
+                        <div className="analysis-card">
+                          <h5>⚡ Actual TPS</h5>
+                          <div className="metric-value">{actualTPS.toFixed(1)}</div>
+                          <div className="metric-unit">transactions/sec</div>
+                        </div>
+                        <div className="analysis-card">
+                          <h5>📈 Utilization</h5>
+                          <div className="metric-value">{((config.tpsConfig.avgTransactionTime / totalTime) * 100).toFixed(1)}%</div>
+                          <div className="metric-unit">CPU utilization</div>
+                        </div>
+                      </div>
+                      
+                      {isVULimited && (
+                        <div className="warning-message">
+                          ⚠️ <strong>VU Limitation Detected:</strong> To achieve {targetTPS} TPS, 
+                          you need {requiredVUs} VUs, but max is set to {config.tpsConfig.maxVUs}. 
+                          Actual TPS will be ~{actualTPS.toFixed(1)}.
+                        </div>
+                      )}
+                      
+                      <div className="formula-explanation">
+                        <h5>📐 TPS Calculation Formula</h5>
+                        <div className="formula-box">
+                          <code>TPS = VUs ÷ (Transaction Time + Think Time)</code><br/>
+                          <code>Required VUs = Target TPS × (Transaction Time + Think Time)</code>
+                        </div>
+                        <div className="formula-example">
+                          <strong>Example:</strong> For {targetTPS} TPS with {config.tpsConfig.avgTransactionTime}s transaction time 
+                          and {config.tpsConfig.thinkTime}s think time = {finalVUs} VUs needed
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
           </div>
           
           <div className="config-section">
@@ -3645,6 +4028,262 @@ styleSheet.textContent = `
     border-radius: 3px;
     font-family: 'Courier New', monospace;
     font-size: 12px;
+  }
+
+  /* TPS Configuration Styles */
+  .test-mode-selection {
+    margin-bottom: 24px;
+  }
+
+  .mode-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 12px;
+  }
+
+  .mode-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+  }
+
+  .mode-btn:hover {
+    border-color: #3b82f6;
+    background: #f8fafc;
+  }
+
+  .mode-btn.active {
+    border-color: #3b82f6;
+    background: #eff6ff;
+  }
+
+  .mode-icon {
+    font-size: 24px;
+    min-width: 32px;
+  }
+
+  .mode-info h4 {
+    margin: 0 0 4px 0;
+    color: #1f2937;
+    font-size: 14px;
+  }
+
+  .mode-info p {
+    margin: 0;
+    color: #6b7280;
+    font-size: 12px;
+  }
+
+  .tps-configuration {
+    margin-top: 20px;
+    padding: 20px;
+    background: #f9fafb;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+  }
+
+  .tps-presets h4,
+  .custom-tps-config h4,
+  .advanced-tps-config h4,
+  .tps-analysis h4 {
+    margin: 0 0 16px 0;
+    color: #1f2937;
+    font-size: 16px;
+  }
+
+  .tps-preset-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .tps-preset-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .tps-preset-card:hover {
+    border-color: #3b82f6;
+    background: #f8fafc;
+  }
+
+  .tps-preset-card.selected {
+    border-color: currentColor;
+    background: #f0f9ff;
+  }
+
+  .tps-preset-icon {
+    font-size: 20px;
+    min-width: 24px;
+  }
+
+  .tps-preset-info h5 {
+    margin: 0 0 4px 0;
+    color: #1f2937;
+    font-size: 13px;
+  }
+
+  .tps-preset-stats {
+    display: flex;
+    gap: 8px;
+    font-size: 11px;
+    color: #4b5563;
+  }
+
+  .tps-preset-stats span {
+    background: #e5e7eb;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  .custom-tps-config,
+  .advanced-tps-config {
+    margin-bottom: 24px;
+    padding: 16px;
+    background: white;
+    border-radius: 6px;
+    border: 1px solid #d1d5db;
+  }
+
+  .tps-config-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+  }
+
+  .config-field {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .config-field label {
+    font-weight: 500;
+    color: #374151;
+    margin-bottom: 4px;
+    font-size: 14px;
+  }
+
+  .help-text {
+    font-weight: normal;
+    color: #6b7280;
+    font-size: 12px;
+    display: block;
+  }
+
+  .config-field input,
+  .config-field select {
+    padding: 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    font-size: 14px;
+  }
+
+  .config-field input:focus,
+  .config-field select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .tps-analysis {
+    padding: 16px;
+    background: #f0fdf4;
+    border-radius: 6px;
+    border: 1px solid #bbf7d0;
+  }
+
+  .tps-analysis-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .analysis-card {
+    background: white;
+    padding: 16px;
+    border-radius: 6px;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+
+  .analysis-card h5 {
+    margin: 0 0 8px 0;
+    color: #374151;
+    font-size: 14px;
+  }
+
+  .metric-value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #059669;
+    margin-bottom: 4px;
+  }
+
+  .metric-unit {
+    font-size: 12px;
+    color: #6b7280;
+  }
+
+  .warning {
+    color: #f59e0b;
+    font-size: 12px;
+    font-weight: bold;
+    margin-top: 4px;
+  }
+
+  .warning-message {
+    background: #fef3c7;
+    border: 1px solid #f59e0b;
+    border-radius: 4px;
+    padding: 12px;
+    color: #92400e;
+    font-size: 14px;
+    margin-bottom: 16px;
+  }
+
+  .formula-explanation {
+    background: white;
+    padding: 16px;
+    border-radius: 6px;
+    border: 1px solid #d1d5db;
+  }
+
+  .formula-explanation h5 {
+    margin: 0 0 12px 0;
+    color: #1f2937;
+    font-size: 14px;
+  }
+
+  .formula-box {
+    background: #1f2937;
+    color: #f9fafb;
+    padding: 12px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    margin-bottom: 12px;
+    font-size: 13px;
+  }
+
+  .formula-example {
+    color: #4b5563;
+    font-size: 14px;
   }
 `;
 
