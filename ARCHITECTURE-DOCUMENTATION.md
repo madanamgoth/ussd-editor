@@ -49,7 +49,7 @@ The USSD Flow Editor is a sophisticated single-page application (SPA) built on m
 ### Frontend Core
 - **React 19**: Latest React with concurrent features and enhanced hooks
 - **React Flow 12**: Advanced graph visualization and interaction library
-- **Vite 5**: Next-generation build tool with fast HMR and optimized bundling
+- **Vite 7.1.2**: Next-generation build tool with fast HMR and optimized bundling
 - **ESLint**: Code quality and consistency enforcement
 
 ### Styling & UI
@@ -67,8 +67,6 @@ The USSD Flow Editor is a sophisticated single-page application (SPA) built on m
 ### Development Tools
 - **Vite Dev Server**: Development environment with HMR
 - **ESLint Config**: Modern JavaScript/React linting rules
-- **Docker**: Containerization for deployment
-- **Shell Scripts**: Cross-platform workflow automation
 
 ### Testing & Validation
 - **K6**: Load testing script generation
